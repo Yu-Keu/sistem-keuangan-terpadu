@@ -5,7 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
   // Ganti <NAMA-REPO-GITHUB> dengan nama repository Anda
-  base: process.env.NODE_ENV === 'production' ? '/<NAMA-REPO-GITHUB>/' : '/',
+  base: process.env.NODE_ENV === 'production' ? '/sistem-keuangan-terpadu/' : '/',
   build: {
     outDir: 'dist',
     sourcemap: false
