@@ -583,34 +583,53 @@ export function useFinance() {
     const first = selected[0];
     let totalKasbon = 0, totalBeban = 0;
 
+    // 1. Hitung total kasbon dan beban
     selected.forEach(item => {
       const isKasbon = String(item.kodeAkun).startsWith("113") || 
-                       (item.bidang && (item.bidang.toLowerCase().includes("kasbon") || item.bidang.toLowerCase().includes("uang muka"))) || 
-                       item.uraian.toLowerCase().includes("pelunasan") ||
-                       (item.debet > 0 && item.kredit === 0);
+                      (item.bidang && (item.bidang.toLowerCase().includes("kasbon") || item.bidang.toLowerCase().includes("uang muka"))) || 
+                      item.uraian.toLowerCase().includes("pelunasan");
 
-      const rawNom = item.kredit !== 0 ? item.kredit : item.debet;
-      if (isKasbon) totalKasbon += Math.abs(rawNom);
-      else totalBeban += Math.abs(rawNom);
+      const rawNom = Math.abs(item.kredit !== 0 ? item.kredit : item.debet);
+      if (isKasbon) totalKasbon += rawNom;
+      else totalBeban += rawNom;
     });
 
     const selisih = totalKasbon - totalBeban;
 
+    // 2. NORMALISASI POSISI DEBET & KREDIT SECARA AKUNTANSI
     pengeluaranData.value.forEach(item => {
       if (item.selected && !item.groupId) {
+        const isKasbon = String(item.kodeAkun).startsWith("113") || 
+                        (item.bidang && (item.bidang.toLowerCase().includes("kasbon") || item.bidang.toLowerCase().includes("uang muka"))) || 
+                        item.uraian.toLowerCase().includes("pelunasan");
+        
+        const rawNom = Math.abs(item.kredit !== 0 ? item.kredit : item.debet);
+
         item.groupId = newGroupId;
         item.uraian = targetUraian;
         item.selected = false;
+
+        if (isKasbon) {
+          // Penutupan Uang Muka/Kasbon WAJIB di KREDIT
+          item.debet = 0;
+          item.kredit = rawNom;
+        } else {
+          // Realisasi Belanja / Beban WAJIB di DEBIT
+          item.debet = rawNom;
+          item.kredit = 0;
+        }
       }
     });
 
+    // Cari posisi baris terakhir dari grup ini
     let lastIdx = -1;
     pengeluaranData.value.forEach((item, idx) => {
       if (item.groupId === newGroupId) lastIdx = idx;
     });
 
+    // 3. GENERATE BARIS PENYEIMBANG KAS / BANK (JIKA ADA SELISIH)
     if (Math.abs(selisih) > 0.01 && lastIdx !== -1) {
-      const isReimburse = selisih < 0;
+      const isReimburse = selisih < 0; // Beban > Kasbon
       const absSelisih = Math.abs(selisih);
       
       let bankCode = "111010201", bankName = "Kas Kecil Mahad Ibnu Taimiyah";
@@ -627,6 +646,7 @@ export function useFinance() {
         namaAkun: bankName,
         uraian: isReimburse ? `[Reimburse Selisih] ${targetUraian}` : `[Pengembalian Sisa Kasbon] ${targetUraian}`,
         nama: first.nama,
+        // Reimburse (Kas keluar) = KREDIT | Sisa uang kembali (Kas masuk) = DEBIT
         debet: isReimburse ? 0 : absSelisih,
         kredit: isReimburse ? absSelisih : 0,
         selected: false,
@@ -643,7 +663,7 @@ export function useFinance() {
     }
 
     showLPJModal.value = false;
-    showToast(`Berhasil mengikat ${newGroupId} (Jurnal Balance)`);
+    showToast(`Berhasil mengikat ${newGroupId} (Jurnal Seimbang/Balance)`);
   };
 
   const ungroupLPJ = (gId) => {
@@ -668,24 +688,68 @@ export function useFinance() {
   };
 
   // Otomatis menentukan posisi DEBIT/KREDIT payload berdasarkan letak nominalnya
-  const handlePengeluaranRowAction = (item) => {
-    const isDebetEntry = item.debet > 0 && item.kredit === 0;
-    const amt = isDebetEntry ? item.debet : item.kredit;
-    
-    // Jika baris berada di kolom Debit (Pelunasan Kasbon/Uang Masuk):
-    // Posisi Kas/Bank = DEBIT, Posisi COA = KREDIT
-    // Jika baris berada di kolom Kredit (Belanja/Beban):
-    // Posisi Kas/Bank = KREDIT, Posisi COA = DEBIT
-    const posBank = isDebetEntry ? "DEBIT" : "KREDIT";
-    const posCOA = isDebetEntry ? "KREDIT" : "DEBIT";
+  // =========================================================================
+// UNIVERSAL MULTI-ROW PAYLOAD GENERATOR (Untuk Transaksi Biasa & LPJ)
+// =========================================================================
 
-    const payload = `${item.tanggal}|${item.uraian}|${item.kasBank}|${posBank}|${item.kodeAkun} - ${item.namaAkun}|${posCOA}|${amt}`;
+// Copy Transaksi Tunggal (2 Baris Jurnal: Kas/Bank & Beban/Akun)
+const handlePengeluaranRowAction = (item) => {
+  const isDebetEntry = item.debet > 0 && item.kredit === 0;
+  const amt = isDebetEntry ? item.debet : item.kredit;
+  const posBank = isDebetEntry ? "DEBIT" : "KREDIT";
+  const posCOA = isDebetEntry ? "KREDIT" : "DEBIT";
 
-    navigator.clipboard.writeText(payload).then(() => {
-      item.wasCopied = true;
-      item.justCopied = true;
-      setTimeout(() => item.justCopied = false, 1500);
-      showToast("Payload Pengeluaran disalin!");
+  // Format Multi-Baris Standar:
+  // Baris 1: HEADER (Tanggal|Uraian)
+  // Baris 2: Kas/Bank
+  // Baris 3: COA Pembebanan
+  const payload = [
+    `${item.tanggal}|${item.uraian}`,
+    `${item.kasBank}|${posBank}|${amt}`,
+    `${item.kodeAkun} - ${item.namaAkun}|${posCOA}|${amt}`
+  ].join("\n");
+
+  navigator.clipboard.writeText(payload).then(() => {
+    item.wasCopied = true;
+    item.justCopied = true;
+    setTimeout(() => item.justCopied = false, 1500);
+    showToast("Payload Transaksi disalin!");
+  });
+};
+
+// Copy 1 Paket LPJ Sekaligus (Bisa 3, 4, 5+ baris jurnal otomatis seimbang)
+const handleCopyLPJBundle = (groupId) => {
+  const groupItems = pengeluaranData.value.filter(i => i.groupId === groupId && !i.hidden);
+  if (groupItems.length === 0) return;
+
+  const first = groupItems[0];
+  const lines = [`${first.tanggal}|${first.uraian}`];
+
+  groupItems.forEach(item => {
+    // Cukup cek kode akun 113 (Uang Muka / Kasbon)
+    const isKasbon = String(item.kodeAkun).startsWith("113");
+
+     if (item.isGenerated) {
+      const type = item.debet > 0 ? "DEBIT" : "KREDIT";
+      const amt = Math.abs(item.debet || item.kredit);
+      lines.push(`${item.kasBank}|${type}|${amt}`);
+    } else if (isKasbon) {
+      const amt = Math.abs(item.kredit || item.debet);
+      lines.push(`${item.kodeAkun} - ${item.namaAkun}|KREDIT|${amt}`);
+    } else {
+      const amt = Math.abs(item.debet || item.kredit);
+      lines.push(`${item.kodeAkun} - ${item.namaAkun}|DEBIT|${amt}`);
+    }
+  });
+
+  const fullPayload = lines.join("\n");
+    navigator.clipboard.writeText(fullPayload).then(() => {
+      groupItems.forEach(i => {
+        i.wasCopied = true;
+        i.justCopied = true;
+        setTimeout(() => i.justCopied = false, 1500);
+      });
+      showToast(`Bundle LPJ (${groupItems.length} Baris) disalin!`);
     });
   };
 
@@ -816,7 +880,7 @@ export function useFinance() {
     openEditModal, confirmSaveEdit,
     exportPengeluaranExcel: () => exportPengeluaranToExcel(filteredPengeluaran.value),
     exportPemasukanExcel: () => exportPemasukanToExcel(filteredPemasukan.value),
-    resetAll,
+    resetAll, handleCopyLPJBundle,
     uploadedFilesCount, selectedCountPengeluaran, hiddenPengeluaranCount, allBankAvailableDates,
     computedBankBalances, filteredPengeluaran, totalDebitPengeluaran, totalKreditPengeluaran,
     availableDatesPengeluaran, availableKasBanksPengeluaran, filteredPemasukan,

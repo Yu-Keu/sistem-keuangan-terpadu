@@ -107,7 +107,7 @@
                   <span
                     v-if="item.isGenerated"
                     class="text-emerald-700 font-bold text-[9px] bg-emerald-100 px-2 py-0.5 rounded-full"
-                    >LPJ</span
+                    >LPJ BALANCING</span
                   >
                   <span
                     v-else-if="item.isMergedGroup"
@@ -128,20 +128,31 @@
                     >
                   </div>
 
-                  <!-- Badge Status Sumber -->
-                  <div v-if="item.groupId" class="text-[9px]">
+                  <!-- Badge Status Sumber & Tombol Copy Bundle LPJ -->
+                  <div
+                    v-if="item.groupId"
+                    class="text-[9px] flex flex-col items-center gap-1 mt-0.5"
+                  >
                     <span
                       class="bg-sky-100 text-sky-800 px-1.5 py-0.2 rounded font-bold"
                       >{{ item.groupId }}</span
                     >
                     <button
+                      @click="handleCopyLPJBundle(item.groupId)"
+                      class="text-[9px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-1.5 py-0.5 rounded shadow-xs transition"
+                      title="Salin semua baris LPJ sekaligus"
+                    >
+                      📋 Copy LPJ
+                    </button>
+                    <button
                       v-if="!item.isGenerated"
                       @click="ungroupLPJ(item.groupId)"
-                      class="text-[9px] text-rose-500 hover:underline block"
+                      class="text-[8px] text-rose-500 hover:underline"
                     >
                       Lepas
                     </button>
                   </div>
+
                   <div v-else-if="item.isMergedGroup" class="text-[9px]">
                     <button
                       @click="unmergeGroup(item.mergeId)"
@@ -155,7 +166,6 @@
                       v-if="item.matchedBridge"
                       @click="openBankDetail(item)"
                       class="bg-emerald-100 text-emerald-800 font-bold text-[8px] px-1.5 py-0.5 rounded cursor-pointer hover:bg-emerald-200 transition whitespace-nowrap block"
-                      title="Klik untuk cek detail"
                     >
                       ✓ Match Bank
                     </span>
@@ -283,13 +293,15 @@
                 {{ formatRupiah(item.kredit) }}
               </td>
 
-              <!-- 8. Aksi (Edit, Payload & Sembunyikan) -->
+              <!-- 8. Kolom Aksi -->
               <td class="px-3 py-2.5 text-center">
+                <!-- Tombol tetap tampil meskipun item berada dalam grup LPJ -->
                 <div
-                  v-if="!item.groupId && !item.selected && !item.isGenerated"
+                  v-if="!item.selected"
                   class="flex items-center justify-center gap-1"
                 >
                   <button
+                    v-if="!item.isGenerated"
                     @click="openEditModal(item, 'pengeluaran')"
                     class="bg-slate-100 hover:bg-slate-200 text-slate-700 p-1 rounded-lg text-[10px] font-semibold transition"
                     title="Edit COA & Deskripsi"
@@ -297,7 +309,11 @@
                     ✏️
                   </button>
                   <button
-                    @click="handlePengeluaranRowAction(item)"
+                    @click="
+                      item.groupId
+                        ? handleCopyLPJBundle(item.groupId)
+                        : handlePengeluaranRowAction(item)
+                    "
                     :class="
                       item.justCopied
                         ? 'bg-emerald-600 text-white'
@@ -306,13 +322,24 @@
                           : 'bg-slate-800 hover:bg-slate-700 text-white'
                     "
                     class="px-2 py-1 text-[10px] rounded-lg font-semibold transition min-w-[55px]"
-                    title="Salin Payload Jurnal"
+                    :title="
+                      item.groupId
+                        ? 'Salin 1 Paket LPJ'
+                        : 'Salin Payload Jurnal'
+                    "
                   >
                     {{
-                      item.justCopied ? "✓" : item.wasCopied ? "Lagi" : "Copy"
+                      item.justCopied
+                        ? "✓"
+                        : item.wasCopied
+                          ? "Lagi"
+                          : item.groupId
+                            ? "LPJ"
+                            : "Copy"
                     }}
                   </button>
                   <button
+                    v-if="!item.isGenerated"
                     @click="hidePengeluaranRow(item)"
                     class="text-slate-400 hover:text-rose-600 p-1 transition"
                     title="Sembunyikan"
@@ -371,6 +398,7 @@ const {
   ungroupLPJ,
   unmergeGroup,
   handlePengeluaranRowAction,
+  handleCopyLPJBundle,
   hidePengeluaranRow,
   totalDebitPengeluaran,
   totalKreditPengeluaran,
