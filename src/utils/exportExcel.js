@@ -1,25 +1,17 @@
 /**
  * ======================================================================
  * FILE: src/utils/exportExcel.js
- * GENERATOR EKSPOR EXCEL JURNAL STANDAR 8 KOLOM (DIPERBAIKI)
+ * GENERATOR EKSPOR EXCEL JURNAL STANDAR 8 KOLOM (100% DOUBLE ENTRY)
  * ======================================================================
  */
 
 import * as XLSX from "xlsx";
 
-// Helper Penentu Kode & Nama Akun Kas/Bank
 function getBankDetails(kasBank) {
   const kb = String(kasBank || "").toLowerCase();
-  if (kb.includes("bsi")) {
-    return { code: "111020201", name: "BSI" };
-  }
-  if (kb.includes("muamalat")) {
-    return { code: "111020202", name: "Muamalat" };
-  }
-  if (kb.includes("kas besar")) {
-    return { code: "111010202", name: "Kas Besar Mahad Ibnu Taimiyah" };
-  }
-  // Default: Kas Kecil
+  if (kb.includes("bsi")) return { code: "111020201", name: "BSI" };
+  if (kb.includes("muamalat")) return { code: "111020202", name: "Muamalat" };
+  if (kb.includes("kas besar")) return { code: "111010202", name: "Kas Besar Mahad Ibnu Taimiyah" };
   return { code: "111010201", name: "Kas Kecil Mahad Ibnu Taimiyah" };
 }
 
@@ -48,28 +40,24 @@ export function exportPengeluaranToExcel(filteredData) {
   const processedGroups = new Set();
 
   filteredData.forEach(item => {
-    // -----------------------------------------------------------------------
     // 1. TRANSAKSI BIASA (NON-LPJ)
-    // -----------------------------------------------------------------------
     if (!item.groupId) {
       const isDebetEntry = item.debet > 0 && item.kredit === 0;
       const nom = Math.abs(isDebetEntry ? item.debet : item.kredit);
       const bank = getBankDetails(item.kasBank);
 
       if (isDebetEntry) {
-        // Uang Masuk / Pengembalian: Kas/Bank (DEBIT), Akun Lawan (KREDIT)
-        wsData.push([batch, item.tanggal, item.uraian, bank.code, bank.name, "DEBIT", nom, 0]);
-        wsData.push([batch, item.tanggal, item.uraian, item.kodeAkun, item.namaAkun, "KREDIT", 0, nom]);
-      } else {
-        // Beban / Pengeluaran Biasa: Beban (DEBIT), Kas/Bank (KREDIT)
+        // Beban Biasa: DEBIT Beban, KREDIT Kas/Bank
         wsData.push([batch, item.tanggal, item.uraian, item.kodeAkun, item.namaAkun, "DEBIT", nom, 0]);
         wsData.push([batch, item.tanggal, item.uraian, bank.code, bank.name, "KREDIT", 0, nom]);
+      } else {
+        // Uang Masuk / Penutupan: DEBIT Kas/Bank, KREDIT Akun Lawan
+        wsData.push([batch, item.tanggal, item.uraian, bank.code, bank.name, "DEBIT", nom, 0]);
+        wsData.push([batch, item.tanggal, item.uraian, item.kodeAkun, item.namaAkun, "KREDIT", 0, nom]);
       }
       batch++;
     } 
-    // -----------------------------------------------------------------------
-    // 2. TRANSAKSI BUNDLE LPJ (MULTI-ROW KASBON & BEBAN)
-    // -----------------------------------------------------------------------
+    // 2. TRANSAKSI BUNDLE LPJ (MULTI-BARIS KASBON & BEBAN)
     else {
       if (processedGroups.has(item.groupId)) return;
       processedGroups.add(item.groupId);
@@ -79,23 +67,20 @@ export function exportPengeluaranToExcel(filteredData) {
       gItems.forEach(g => {
         const nom = Math.abs(g.debet !== 0 ? g.debet : g.kredit);
 
-        // Jika baris penyeimbang kas/bank hasil generate
         if (g.isGenerated) {
+          // Baris penyeimbang kas/bank
           if (g.debet > 0) {
             wsData.push([batch, g.tanggal, g.uraian, g.kodeAkun, g.namaAkun, "DEBIT", nom, 0]);
           } else {
             wsData.push([batch, g.tanggal, g.uraian, g.kodeAkun, g.namaAkun, "KREDIT", 0, nom]);
           }
-        } 
-        // Baris asli (Kasbon atau Beban Riil)
-        else {
+        } else {
           const isKasbon = String(g.kodeAkun).startsWith("113");
-
           if (isKasbon) {
-            // Kasbon yang ditutup WAJIB di KREDIT
+            // Kasbon ditutup = KREDIT
             wsData.push([batch, g.tanggal, g.uraian, g.kodeAkun, g.namaAkun, "KREDIT", 0, nom]);
           } else {
-            // Beban/Belanja riil WAJIB di DEBIT
+            // Belanja riil = DEBIT
             wsData.push([batch, g.tanggal, g.uraian, g.kodeAkun, g.namaAkun, "DEBIT", nom, 0]);
           }
         }

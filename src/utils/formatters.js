@@ -13,25 +13,20 @@ export function parseIndonesianNumber(val) {
   const isNegative = str.startsWith("-") || (str.startsWith("(") && str.endsWith(")"));
   str = str.replace(/Rp|\s/gi, "").replace(/[()]/g, "");
 
-  // Format 1: 3,604,535,013.98 (BSI format: koma ribuan, titik desimal)
   if (str.includes(",") && str.includes(".")) {
     if (str.indexOf(",") < str.indexOf(".")) {
       str = str.replace(/,/g, "");
     } else {
       str = str.replace(/\./g, "").replace(",", ".");
     }
-  } 
-  // Format 2: 1.858.500,00 atau 2,500
-  else if (str.includes(",") && !str.includes(".")) {
+  } else if (str.includes(",") && !str.includes(".")) {
     const parts = str.split(",");
     if (parts.length > 1 && parts[parts.length - 1].length === 3) {
       str = str.replace(/,/g, "");
     } else {
       str = str.replace(",", ".");
     }
-  } 
-  // Format 3: 3102426803.9 (Muamalat) atau 1.858.500
-  else if (str.includes(".") && !str.includes(",")) {
+  } else if (str.includes(".") && !str.includes(",")) {
     const parts = str.split(".");
     if (parts.length > 2) {
       str = str.replace(/\./g, "");
@@ -56,13 +51,11 @@ export function formatBankDateString(str) {
   if (!str) return "";
   str = str.trim();
   
-  // Format YYYY-MM-DD (BSI)
   if (str.includes("-") && str.split("-")[0].length === 4) {
     const p = str.split("-");
     return `${p[2].padStart(2, '0')}/${p[1].padStart(2, '0')}/${p[0]}`;
   }
   
-  // Format DD-MMM-YYYY (Muamalat, misal 31-Jul-2026)
   if (str.includes("-")) {
     const p = str.split("-");
     if (p.length === 3) {
@@ -104,16 +97,11 @@ export function toTitleCase(str) {
     .join(" ");
 }
 
-/**
- * SMART EXPENSE DESCRIPTION STANDARDIZER
- * Mengubah input semaunya operator menjadi format jurnal baku, rapi, dan seragam
- */
 export function standardizeExpenseDescription(rawUraian, rawNama = "", kodeAkun = "", kasBank = "") {
   let text = String(rawUraian || "").trim();
   let nama = String(rawNama || "").trim();
   if (nama === "-" || nama.toLowerCase() === "bank") nama = "";
 
-  // 1. Bersihkan typo & awalan redundan
   text = text
     .replace(/^transfer\s+(pembelian|bayar|pelunasan|biaya)?\s*/gi, "")
     .replace(/^bayar\s+/gi, "")
@@ -124,7 +112,6 @@ export function standardizeExpenseDescription(rawUraian, rawNama = "", kodeAkun 
     .replace(/\s+/g, " ")
     .trim();
 
-  // Ekstrak keterangan dalam kurung jika ada, contoh: ( biaya kontrakan )
   let detailInBrackets = "";
   const bracketMatch = text.match(/\((.*?)\)/);
   if (bracketMatch) {
@@ -136,7 +123,6 @@ export function standardizeExpenseDescription(rawUraian, rawNama = "", kodeAkun 
   const u = text.toUpperCase();
   const rawLower = String(rawUraian || "").toLowerCase();
 
-  // 1. PINJAMAN PEGAWAI (112030102 atau kata kunci 'pinjaman')
   if (kode.startsWith("11203") || u.includes("PINJAMAN")) {
     let targetNama = nama;
     if (!targetNama) {
@@ -147,7 +133,6 @@ export function standardizeExpenseDescription(rawUraian, rawNama = "", kodeAkun 
     return `Pinjaman Pegawai: ${toTitleCase(targetNama || "Pegawai")}${cleanKeperluan ? ` (${cleanKeperluan})` : ""}`;
   }
 
-  // 2. KASBON / UANG MUKA (113020102 atau kata kunci 'kas bon / uang muka')
   if (kode.startsWith("11302") || u.includes("KAS BON") || u.includes("KASBON") || u.includes("UANG MUKA")) {
     const isPelunasan = rawLower.includes("pelunasan") || rawLower.includes("tutup") || rawLower.includes("selesai");
     let cleanObj = text
@@ -164,47 +149,40 @@ export function standardizeExpenseDescription(rawUraian, rawNama = "", kodeAkun 
     return `${prefix} ${cleanObj}${namaPart}${extraBracket}`;
   }
 
-  // 3. DANA TITIPAN SANTRI / UANG SAKU (213010106 / 213010108)
   if (kode.startsWith("2130101") || u.includes("UANG SAKU") || u.includes("TITIPAN")) {
     const cleanObj = toTitleCase(text);
     const namaPart = nama ? ` (${toTitleCase(nama)})` : "";
     return `Penyaluran Titipan: ${cleanObj}${namaPart}`;
   }
 
-  // 4. REFUND / PENGEMBALIAN DANA
   if (u.includes("REFUND") || u.includes("PENGEMBALIAN DANA")) {
     let cleanObj = text.replace(/^refund\s*/gi, "").replace(/^pengembalian\s*dana\s*/gi, "").trim();
     return `Pengembalian Dana (Refund): ${toTitleCase(cleanObj)}${nama ? ` (a.n. ${toTitleCase(nama)})` : ""}`;
   }
 
-  // 5. BIAYA ADMINISTRASI BANK (621010101)
   if (kode === "621010101" || u.includes("PEMINDAHBUKUAN E-BANKING") || u.includes("BIAYA ADMIN")) {
     const bankName = kasBank ? kasBank.replace(/Bank /gi, "") : "Bank";
     return `Biaya Administrasi Bank ${bankName} (e-Banking)`;
   }
 
-  // 6. PENGADAAN BUKU / PERCETAKAN (521010120)
   if (kode === "521010120" || u.includes("BUKU") || u.includes("PERCETAKAN")) {
     const cleanObj = toTitleCase(text);
     const namaPart = nama ? ` (${toTitleCase(nama)})` : "";
     return `Pengadaan Buku: ${cleanObj}${namaPart}`;
   }
 
-  // 7. BEBAN BELANJA DAPUR (521010113)
   if (kode === "521010113") {
     const cleanObj = toTitleCase(text);
     const namaPart = nama ? ` (${toTitleCase(nama)})` : "";
     return `Belanja Dapur: ${cleanObj}${namaPart}`;
   }
 
-  // 8. BEBAN KEGIATAN & PROGRAM (521010126)
   if (kode === "521010126") {
     const cleanObj = toTitleCase(text);
     const namaPart = nama ? ` (${toTitleCase(nama)})` : "";
     return `Beban Kegiatan: ${cleanObj}${namaPart}`;
   }
 
-  // 9. BEBAN OPERASIONAL UMUM & PEMELIHARAAN (DEFAULT)
   const cleanObj = toTitleCase(text);
   const namaPart = nama ? ` (${toTitleCase(nama)})` : "";
   const bracketPart = detailInBrackets ? ` [${toTitleCase(detailInBrackets)}]` : "";
@@ -216,12 +194,13 @@ export function getCategoryBadge(item) {
   const kode = String(item.kodeAkun || "");
   const uraian = String(item.uraian || "").toUpperCase();
 
-  if (item.isGenerated || uraian.includes("PELUNASAN KASBON")) return { label: "LPJ KASBON", bg: "bg-emerald-100 text-emerald-800 border-emerald-200" };
+  if (item.isGenerated || item.groupId) return { label: "LPJ", bg: "bg-emerald-100 text-emerald-800 border-emerald-200" };
   if (kode.startsWith("11302") || uraian.includes("UANG MUKA") || uraian.includes("KASBON")) return { label: "KASBON", bg: "bg-sky-100 text-sky-800 border-sky-200" };
   if (kode.startsWith("11203") || uraian.includes("PINJAMAN")) return { label: "PINJAMAN", bg: "bg-amber-100 text-amber-800 border-amber-200" };
   if (kode.startsWith("21301") || uraian.includes("TITIPAN")) return { label: "TITIPAN", bg: "bg-purple-100 text-purple-800 border-purple-200" };
   if (kode === "621010101" || uraian.includes("ADMIN")) return { label: "ADMIN BANK", bg: "bg-slate-200 text-slate-700 border-slate-300" };
   if (uraian.includes("REFUND")) return { label: "REFUND", bg: "bg-rose-100 text-rose-800 border-rose-200" };
   if (kode === "521010113") return { label: "DAPUR", bg: "bg-orange-100 text-orange-800 border-orange-200" };
+  
   return { label: "PENGELUARAN", bg: "bg-slate-100 text-slate-600 border-slate-200" };
 }
