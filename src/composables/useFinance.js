@@ -11,7 +11,8 @@ import { parseBukuBesarSheet, parseBsiCsvText, parseMuamalatCsvText, parsePemasu
 import { 
   parseSortableTimestamp, 
   formatRupiah, 
-  standardizeExpenseDescription 
+  standardizeExpenseDescription,
+  getCategoryBadge
 } from "../utils/formatters.js";
 import { MASTER_COA_LIST } from "../constants/coa.js";
 import { exportPengeluaranToExcel, exportPemasukanToExcel } from "../utils/exportExcel.js";
@@ -57,12 +58,13 @@ const lpjCounter = ref(0);
 const lpjUraian = ref("");
 const lpjSummary = reactive({ totalKasbon: 0, totalBeban: 0, selisih: 0, status: "", isReimburse: false });
 
-// Filter Pengeluaran & Pemasukan
+// Filter Pengeluaran (Ditambahkan Filter Label/Kategori) & Pemasukan
 const filterPengeluaran = reactive({ 
   date: "ALL", 
   kasBank: "ALL", 
   sourceType: "ALL", 
-  penerima: "ALL", 
+  penerima: "ALL",
+  kategori: "ALL", // <-- FILTER LABEL / KATEGORI
   search: "" 
 });
 const filterPemasukan = reactive({ date: "ALL", bank: "ALL", search: "" });
@@ -368,7 +370,7 @@ export function useFinance() {
     // =========================================================================
     // PASS 3: STANDARISASI DOUBLE ENTRY UNTUK SEMUA DATA
     // =========================================================================
-    const activeKasKecilTunai = rawKas.filter(k => 
+   const activeKasKecilTunai = rawKas.filter(k => 
       !k.isEliminated && 
       !k.isBridge && 
       !k.isCompanionBridgeCredit && 
@@ -376,12 +378,21 @@ export function useFinance() {
       k.kpFlag !== "2" &&
       (k.debet > 0 || k.kredit > 0)
     ).map(k => {
-      const isKasbonClose = String(k.kodeAkun).startsWith("113");
+      const rawLower = (String(k.originalUraian || "") + " " + String(k.uraian || "")).toLowerCase();
+      const isKasbonCOA = String(k.kodeAkun).startsWith("113");
+      
+      // HANYA yang keterangannya pelunasan/tutup yang masuk KREDIT
+      const isKasbonClose = isKasbonCOA && (
+        rawLower.includes("pelunasan") || 
+        rawLower.includes("tutup") || 
+        rawLower.includes("selesai")
+      );
+      
       const rawNom = Math.abs(k.debet !== 0 ? k.debet : k.kredit);
       
       return {
         ...k,
-        // Double Entry: Jika kasbon ditutup -> Kredit, Jika beban biasa -> Debet
+        // Kasbon Baru & Beban = DEBET | Pelunasan Kasbon Saja = KREDIT
         debet: isKasbonClose ? 0 : rawNom,
         kredit: isKasbonClose ? rawNom : 0,
         uraian: standardizeExpenseDescription(k.uraian, k.nama, k.kodeAkun, k.kasBank)
@@ -535,7 +546,6 @@ export function useFinance() {
       item.selected = false;
     });
 
-    // Double Entry: Beban Admin Bank adalah DEBET
     const mergedRow = {
       id: "MERGED-" + Date.now(),
       tanggal: mergeForm.tanggal,
@@ -624,7 +634,6 @@ export function useFinance() {
 
     const selisih = totalKasbon - totalBeban;
 
-    // Normalisasi Murni Double Entry
     pengeluaranData.value.forEach(item => {
       if (item.selected && !item.groupId) {
         const isKasbon = String(item.kodeAkun).startsWith("113");
@@ -635,11 +644,9 @@ export function useFinance() {
         item.selected = false;
 
         if (isKasbon) {
-          // Kasbon yang ditutup = KREDIT
           item.debet = 0;
           item.kredit = rawNom;
         } else {
-          // Realisasi Belanja = DEBET
           item.debet = rawNom;
           item.kredit = 0;
         }
@@ -651,7 +658,6 @@ export function useFinance() {
       if (item.groupId === newGroupId) lastIdx = idx;
     });
 
-    // Baris Penyeimbang Kas/Bank
     if (Math.abs(selisih) > 0.01 && lastIdx !== -1) {
       const isReimburse = selisih < 0;
       const absSelisih = Math.abs(selisih);
@@ -670,7 +676,6 @@ export function useFinance() {
         namaAkun: bankName,
         uraian: isReimburse ? `[Reimburse Selisih] ${targetUraian}` : `[Pengembalian Sisa Kasbon] ${targetUraian}`,
         nama: first.nama,
-        // Reimburse (Kas keluar) = KREDIT | Sisa uang kembali (Kas masuk) = DEBIT
         debet: isReimburse ? 0 : absSelisih,
         kredit: isReimburse ? absSelisih : 0,
         selected: false,
@@ -712,7 +717,7 @@ export function useFinance() {
   };
 
   // =========================================================================
-  // PAYLOAD GENERATOR (100% KONSISTEN DENGAN TAMPILAN)
+  // PAYLOAD GENERATOR
   // =========================================================================
   const handlePengeluaranRowAction = (item) => {
     const isDebetEntry = item.debet > 0;
@@ -765,10 +770,6 @@ export function useFinance() {
     const nom = Math.abs(item.totalPenerimaan);
     const tgl = (item.tglFormatted || "").replace(/-/g, '/');
 
-    // Format Universal Multi-Baris Sesuai AHK Baru:
-    // Baris 1: Header (Tanggal|Uraian)
-    // Baris 2: Kas/Bank (DEBIT - Uang Masuk)
-    // Baris 3: COA Penerimaan (KREDIT - Pendapatan/Kewajiban)
     const payload = [
       `${tgl}|${item.uraianJurnal}`,
       `${item.kasBank}|DEBIT|${nom}`,
@@ -798,7 +799,9 @@ export function useFinance() {
     showToast("Semua data berhasil direset.");
   };
 
-  // Computeds
+  // =========================================================================
+  // COMPUTED PROPERTIES
+  // =========================================================================
   const uploadedFilesCount = computed(() => {
     return (filesStatus.bukuBesar ? 1 : 0) + (filesStatus.bsi ? 1 : 0) + (filesStatus.muamalat ? 1 : 0) + (filesStatus.pemasukan ? 1 : 0);
   });
@@ -855,6 +858,17 @@ export function useFinance() {
     return Array.from(set).sort();
   });
 
+  // DAFTAR LABEL KATEGORI YANG TERSEDIA SECARA DINAMIS
+  const availableCategoriesPengeluaran = computed(() => {
+    const set = new Set();
+    pengeluaranData.value.forEach(item => {
+      const b = getCategoryBadge(item);
+      if (b && b.label) set.add(b.label);
+    });
+    return Array.from(set);
+  });
+
+  // FILTERED PENGELUARAN DENGAN FILTER KATEGORI/LABEL
   const filteredPengeluaran = computed(() => {
     return pengeluaranData.value.filter(item => {
       if (item.hidden) return false;
@@ -862,6 +876,13 @@ export function useFinance() {
       const mKas = filterPengeluaran.kasBank === "ALL" || item.kasBank === filterPengeluaran.kasBank;
       const mPenerima = filterPengeluaran.penerima === "ALL" || item.nama === filterPengeluaran.penerima;
       
+      // Filter Kategori/Label Transaksi
+      let mKat = true;
+      if (filterPengeluaran.kategori && filterPengeluaran.kategori !== "ALL") {
+        const badge = getCategoryBadge(item);
+        mKat = badge.label === filterPengeluaran.kategori;
+      }
+
       let mSource = true;
       if (filterPengeluaran.sourceType === "KAS_TUNAI") mSource = !item.isDirectBankOutflow;
       else if (filterPengeluaran.sourceType === "MATCHED_BANK") mSource = Boolean(item.matchedBridge);
@@ -870,7 +891,8 @@ export function useFinance() {
 
       const q = filterPengeluaran.search.toLowerCase();
       const mQ = !q || item.uraian.toLowerCase().includes(q) || item.nama.toLowerCase().includes(q) || item.namaAkun.toLowerCase().includes(q);
-      return mDate && mKas && mPenerima && mSource && mQ;
+      
+      return mDate && mKas && mPenerima && mKat && mSource && mQ;
     });
   });
 
@@ -915,7 +937,7 @@ export function useFinance() {
     resetAll,
     uploadedFilesCount, selectedCountPengeluaran, hiddenPengeluaranCount, allBankAvailableDates,
     computedBankBalances, filteredPengeluaran, totalDebitPengeluaran, totalKreditPengeluaran,
-    availableDatesPengeluaran, availableKasBanksPengeluaran, availablePenerimaPengeluaran,
+    availableDatesPengeluaran, availableKasBanksPengeluaran, availablePenerimaPengeluaran, availableCategoriesPengeluaran,
     filteredPemasukan, totalTransPemasukan, totalNominalPemasukan, availableDatesPemasukan, availableBanksPemasukan,
     filteredCOAList, expandedLPJGroups, toggleExpandLPJ
   };

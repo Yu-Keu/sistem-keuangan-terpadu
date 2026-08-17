@@ -1,7 +1,6 @@
 /**
  * ======================================================================
  * FILE: src/utils/formatters.js
- * HELPER FORMAT MATA UANG, TANGGAL, & STANDARDISASI URAIAN JURNAL
  * ======================================================================
  */
 
@@ -193,14 +192,62 @@ export function standardizeExpenseDescription(rawUraian, rawNama = "", kodeAkun 
 export function getCategoryBadge(item) {
   const kode = String(item.kodeAkun || "");
   const uraian = String(item.uraian || "").toUpperCase();
+  const rawLower = (String(item.originalUraian || "") + " " + String(item.uraian || "")).toLowerCase();
 
-  if (item.isGenerated || item.groupId) return { label: "LPJ", bg: "bg-emerald-100 text-emerald-800 border-emerald-200" };
-  if (kode.startsWith("11302") || uraian.includes("UANG MUKA") || uraian.includes("KASBON")) return { label: "KASBON", bg: "bg-sky-100 text-sky-800 border-sky-200" };
-  if (kode.startsWith("11203") || uraian.includes("PINJAMAN")) return { label: "PINJAMAN", bg: "bg-amber-100 text-amber-800 border-amber-200" };
-  if (kode.startsWith("21301") || uraian.includes("TITIPAN")) return { label: "TITIPAN", bg: "bg-purple-100 text-purple-800 border-purple-200" };
-  if (kode === "621010101" || uraian.includes("ADMIN")) return { label: "ADMIN BANK", bg: "bg-slate-200 text-slate-700 border-slate-300" };
-  if (uraian.includes("REFUND")) return { label: "REFUND", bg: "bg-rose-100 text-rose-800 border-rose-200" };
-  if (kode === "521010113") return { label: "DAPUR", bg: "bg-orange-100 text-orange-800 border-orange-200" };
-  
-  return { label: "PENGELUARAN", bg: "bg-slate-100 text-slate-600 border-slate-200" };
+  // 1. Paket LPJ yang sudah terikat
+  if (item.isGenerated || item.groupId) {
+    return { label: "LPJ", isPelunasan: false, bg: "bg-emerald-100 text-emerald-800 border-emerald-300" };
+  }
+
+  const isKasbonCOA = kode.startsWith("113");
+  const isExplicitKasbonWord = rawLower.includes("kasbon") || rawLower.includes("uang muka") || rawLower.includes("kas bon") || rawLower.includes("kabon");
+
+  // Cek apakah ini SPESIFIK Pelunasan / Penutupan Kasbon
+  const isPelunasanWord = rawLower.includes("pelunasan") || rawLower.includes("tutup kasbon") || rawLower.includes("selesai kasbon") || rawLower.includes("tutup uang muka");
+
+  // 2. PELUNASAN KASBON (Hanya jika akun Kasbon DAN teksnya adalah Pelunasan/Tutup Kasbon)
+  if ((isKasbonCOA || isExplicitKasbonWord) && isPelunasanWord) {
+    return { 
+      label: "PELUNASAN KASBON", 
+      isPelunasan: true, 
+      bg: "bg-amber-100 text-amber-900 border-amber-300 font-bold" 
+    };
+  }
+
+  // 3. KASBON BARU / UANG MUKA KELUAR (Bukan Pelunasan)
+  if (isKasbonCOA || isExplicitKasbonWord) {
+    return { 
+      label: "KASBON", 
+      isPelunasan: false, 
+      bg: "bg-sky-100 text-sky-800 border-sky-300" 
+    };
+  }
+
+  // 4. Pinjaman Pegawai
+  if (kode.startsWith("11203") || uraian.includes("PINJAMAN")) {
+    return { label: "PINJAMAN", isPelunasan: false, bg: "bg-orange-100 text-orange-800 border-orange-300" };
+  }
+
+  // 5. Titipan
+  if (kode.startsWith("21301") || uraian.includes("TITIPAN") || uraian.includes("UANG SAKU")) {
+    return { label: "TITIPAN", isPelunasan: false, bg: "bg-purple-100 text-purple-800 border-purple-300" };
+  }
+
+  // 6. Admin Bank
+  if (kode === "621010101" || uraian.includes("ADMIN")) {
+    return { label: "ADMIN BANK", isPelunasan: false, bg: "bg-slate-200 text-slate-800 border-slate-300" };
+  }
+
+  // 7. Belanja Dapur
+  if (kode === "521010113") {
+    return { label: "DAPUR", isPelunasan: false, bg: "bg-rose-100 text-rose-800 border-rose-300" };
+  }
+
+  // 8. Pengembalian / Refund
+  if (uraian.includes("REFUND") || uraian.includes("PENGEMBALIAN DANA")) {
+    return { label: "REFUND", isPelunasan: false, bg: "bg-pink-100 text-pink-800 border-pink-300" };
+  }
+
+  // 9. Operasional Rutin
+  return { label: "OPERASIONAL", isPelunasan: false, bg: "bg-slate-100 text-slate-700 border-slate-300" };
 }
