@@ -82,64 +82,47 @@
       </div>
 
       <!-- Tab Navigation -->
-      <nav
-        class="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200 text-xs"
-      >
+      <nav class="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200 text-xs">
         <button
           @click="activeTab = 'pengeluaran'"
-          :class="
-            activeTab === 'pengeluaran'
-              ? 'bg-white text-slate-900 font-bold shadow-xs'
-              : 'text-slate-600 hover:text-slate-900 font-medium'
-          "
+          :class="activeTab === 'pengeluaran' ? 'bg-white text-slate-900 font-bold shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium'"
           class="px-3 py-1.5 rounded-xl transition flex items-center gap-1.5"
         >
           <span>💸 Pengeluaran</span>
-          <span
-            class="bg-slate-100 text-[10px] px-1.5 py-0.5 rounded-full font-mono text-slate-700 font-semibold"
-            >{{ pengeluaranData.length }}</span
-          >
+          <span class="bg-slate-100 text-[10px] px-1.5 py-0.5 rounded-full font-mono text-slate-700 font-semibold">{{ pengeluaranData.length }}</span>
+        </button>
+
+        <!-- TAB PER BIDANG -->
+        <button
+          @click="activeTab = 'bidang'"
+          :class="activeTab === 'bidang' ? 'bg-white text-slate-900 font-bold shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium'"
+          class="px-3 py-1.5 rounded-xl transition flex items-center gap-1.5"
+        >
+          <span>🏢 Per Bidang</span>
+          <span class="bg-indigo-100 text-[10px] px-1.5 py-0.5 rounded-full font-mono text-indigo-900 font-semibold">{{ availableBidangList.length }}</span>
         </button>
 
         <button
           @click="activeTab = 'pemasukan'"
-          :class="
-            activeTab === 'pemasukan'
-              ? 'bg-white text-slate-900 font-bold shadow-xs'
-              : 'text-slate-600 hover:text-slate-900 font-medium'
-          "
+          :class="activeTab === 'pemasukan' ? 'bg-white text-slate-900 font-bold shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium'"
           class="px-3 py-1.5 rounded-xl transition flex items-center gap-1.5"
         >
           <span>💰 Pemasukan</span>
-          <span
-            class="bg-slate-100 text-[10px] px-1.5 py-0.5 rounded-full font-mono text-slate-700 font-semibold"
-            >{{ pemasukanData.length }}</span
-          >
+          <span class="bg-slate-100 text-[10px] px-1.5 py-0.5 rounded-full font-mono text-slate-700 font-semibold">{{ pemasukanData.length }}</span>
         </button>
 
         <button
           @click="activeTab = 'audit'"
-          :class="
-            activeTab === 'audit'
-              ? 'bg-white text-slate-900 font-bold shadow-xs'
-              : 'text-slate-600 hover:text-slate-900 font-medium'
-          "
+          :class="activeTab === 'audit' ? 'bg-white text-slate-900 font-bold shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium'"
           class="px-3 py-1.5 rounded-xl transition flex items-center gap-1.5"
         >
           <span>🔍 Log Eliminasi</span>
-          <span
-            class="bg-slate-100 text-[10px] px-1.5 py-0.5 rounded-full font-mono text-slate-700 font-semibold"
-            >{{ eliminatedBridges.length }}</span
-          >
+          <span class="bg-slate-100 text-[10px] px-1.5 py-0.5 rounded-full font-mono text-slate-700 font-semibold">{{ eliminatedBridges.length }}</span>
         </button>
 
         <button
           @click="activeTab = 'masterCoa'"
-          :class="
-            activeTab === 'masterCoa'
-              ? 'bg-white text-slate-900 font-bold shadow-xs'
-              : 'text-slate-600 hover:text-slate-900 font-medium'
-          "
+          :class="activeTab === 'masterCoa' ? 'bg-white text-slate-900 font-bold shadow-xs' : 'text-slate-600 hover:text-slate-900 font-medium'"
           class="px-3 py-1.5 rounded-xl transition"
         >
           <span>📚 COA</span>
@@ -147,11 +130,7 @@
 
         <button
           @click="activeTab = 'upload'"
-          :class="
-            activeTab === 'upload'
-              ? 'bg-emerald-600 text-white font-bold shadow-xs'
-              : 'bg-slate-200 text-slate-700 hover:bg-slate-300 font-semibold'
-          "
+          :class="activeTab === 'upload' ? 'bg-emerald-600 text-white font-bold shadow-xs' : 'bg-slate-200 text-slate-700 hover:bg-slate-300 font-semibold'"
           class="px-3 py-1.5 rounded-xl transition flex items-center gap-1"
         >
           <span>📁 Upload ({{ uploadedFilesCount }}/4)</span>
@@ -174,5 +153,6 @@ const {
   pemasukanData,
   eliminatedBridges,
   uploadedFilesCount,
+  availableBidangList, // <-- Ditambahkan di sini
 } = useFinance();
 </script>

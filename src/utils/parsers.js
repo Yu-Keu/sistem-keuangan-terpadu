@@ -1,7 +1,6 @@
 /**
  * ======================================================================
  * FILE: src/utils/parsers.js
- * PARSER DENGAN AUTO-FLIP NILAI NEGATIF (DIPERBARUI)
  * ======================================================================
  */
 
@@ -60,6 +59,8 @@ export function parseBukuBesarSheet(sheet) {
       }
     }
 
+    // KOLOM B: KODE BIDANG | KOLOM C: NAMA BIDANG
+    const kodeBidang = String(row[1] || "").trim();
     const bidang = String(row[2] || "").trim();
     const kodeAkun = String(row[3] || "").trim();
     const namaAkun = String(row[4] || "").trim();
@@ -71,16 +72,14 @@ export function parseBukuBesarSheet(sheet) {
     let rawDebet = parseIndonesianNumber(row[9]);
     let rawKredit = parseIndonesianNumber(row[11]);
 
-    // 2. Normalisasi Nilai Negatif: Auto-Flip ke Kolom Lawan
+    // Normalisasi Nilai Negatif
     let debet = 0;
     let kredit = 0;
 
     if (rawKredit < 0) {
-      // Pelunasan Kasbon / Koreksi Kredit -> Pindah ke Debit Positif
       debet = Math.abs(rawKredit);
       kredit = 0;
     } else if (rawDebet < 0) {
-      // Koreksi Debit -> Pindah ke Kredit Positif
       kredit = Math.abs(rawDebet);
       debet = 0;
     } else {
@@ -92,7 +91,6 @@ export function parseBukuBesarSheet(sheet) {
     if (debet === 0 && kredit === 0) return;
     if (uraian.toLowerCase().includes("saldo awal") || uraian.toLowerCase().includes("saldo akhir")) return;
 
-    // Jembatan Masuk Semu Bank (HANYA jika KP=2 atau Kas Bank)
     const isDebitBridge = kpFlag === "2" || (debet > 0 && (
       uraian.toLowerCase().includes("tambahan kas bank") ||
       bidang.toLowerCase().includes("kas bank") ||
@@ -105,7 +103,8 @@ export function parseBukuBesarSheet(sheet) {
     list.push({
       id: "KK-" + idx,
       tanggal: tgl,
-      bidang,
+      kodeBidang: kodeBidang || "01",
+      bidang: bidang || "Markaz / Pusat",
       kodeAkun: kodeAkun || "521010110",
       namaAkun: namaAkun || "Beban Operasional Markaz",
       uraian,
@@ -121,6 +120,10 @@ export function parseBukuBesarSheet(sheet) {
       isEliminated: false,
       selected: false,
       groupId: null,
+      splitGroupId: null,
+      isSplitChild: false,
+      isSplitParent: false,
+      splitCount: 0,
       hidden: false,
       wasCopied: false,
       justCopied: false,
@@ -165,7 +168,8 @@ export function parseBsiCsvText(text) {
       outflows.push({
         id: "BSI-OUT-" + idx,
         tanggal: tglClean,
-        bidang: "Pengeluaran Bank BSI",
+        kodeBidang: "01",
+        bidang: "Markaz / Pengeluaran BSI",
         kodeAkun: smartCOA.kode,
         namaAkun: smartCOA.nama,
         uraian: ket,
@@ -179,6 +183,9 @@ export function parseBsiCsvText(text) {
         dateDiffDays: 0,
         selected: false,
         groupId: null,
+        splitGroupId: null,
+        isSplitChild: false,
+        isSplitParent: false,
         mergeId: null,
         isMergedGroup: false,
         hidden: false,
@@ -235,7 +242,8 @@ export function parseMuamalatCsvText(text) {
       outflows.push({
         id: "MUA-OUT-" + idx,
         tanggal: tglClean,
-        bidang: "Pengeluaran Bank Muamalat",
+        kodeBidang: "01",
+        bidang: "Markaz / Pengeluaran Muamalat",
         kodeAkun: smartCOA.kode,
         namaAkun: smartCOA.nama,
         uraian: keterangan,
@@ -249,6 +257,9 @@ export function parseMuamalatCsvText(text) {
         dateDiffDays: 0,
         selected: false,
         groupId: null,
+        splitGroupId: null,
+        isSplitChild: false,
+        isSplitParent: false,
         mergeId: null,
         isMergedGroup: false,
         hidden: false,

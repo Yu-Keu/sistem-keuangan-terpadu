@@ -1,7 +1,7 @@
 /**
  * ======================================================================
  * FILE: src/composables/useFinance.js
- * STATE CONTROLLER & RECONCILIATION ENGINE (100% DOUBLE ENTRY STANDARDIZED)
+ * STATE CONTROLLER & RECONCILIATION ENGINE
  * ======================================================================
  */
 
@@ -15,6 +15,7 @@ import {
   getCategoryBadge
 } from "../utils/formatters.js";
 import { MASTER_COA_LIST } from "../constants/coa.js";
+import { MASTER_BIDANG_LIST } from "../constants/bidang.js";
 import { exportPengeluaranToExcel, exportPemasukanToExcel } from "../utils/exportExcel.js";
 
 // Global Shared State
@@ -37,8 +38,16 @@ const editForm = reactive({
   uraian: "",
   selectedKode: "",
   selectedNama: "",
+  selectedKodeBidang: "",
+  selectedBidang: "",
   rawItemRef: null
 });
+
+// State Split Transaksi per Bidang
+const showSplitModal = ref(false);
+const splitCounter = ref(0);
+const splitSourceItem = ref(null);
+const splitRows = ref([]);
 
 const filesStatus = reactive({ bukuBesar: false, bsi: false, muamalat: false, pemasukan: false });
 const rawKasKecilExpenses = ref([]);
@@ -58,19 +67,27 @@ const lpjCounter = ref(0);
 const lpjUraian = ref("");
 const lpjSummary = reactive({ totalKasbon: 0, totalBeban: 0, selisih: 0, status: "", isReimburse: false });
 
-// Filter Pengeluaran (Ditambahkan Filter Label/Kategori) & Pemasukan
+// Filter Pengeluaran, Pemasukan, & Bidang
 const filterPengeluaran = reactive({ 
   date: "ALL", 
   kasBank: "ALL", 
   sourceType: "ALL", 
   penerima: "ALL",
-  kategori: "ALL", // <-- FILTER LABEL / KATEGORI
+  kategori: "ALL",
   search: "" 
 });
+
+const filterBidang = reactive({
+  kodeBidang: "ALL",
+  date: "ALL",
+  kasBank: "ALL",
+  statusSplit: "ALL", // ALL, SPLIT, UNSPLIT
+  search: ""
+});
+
 const filterPemasukan = reactive({ date: "ALL", bank: "ALL", search: "" });
 const toast = reactive({ show: false, message: "", timeout: null });
 
-// State Expand/Collapse Baris LPJ di Tabel UI
 const expandedLPJGroups = ref(new Set());
 const toggleExpandLPJ = (groupId) => {
   if (expandedLPJGroups.value.has(groupId)) {
@@ -97,7 +114,7 @@ export function useFinance() {
   };
 
   // =========================================================================
-  // FITUR EDIT UNIVERSAL (PENGELUARAN & PEMASUKAN)
+  // FITUR EDIT UNIVERSAL
   // =========================================================================
   const openEditModal = (item, type = "pengeluaran") => {
     editForm.id = item.id;
@@ -108,6 +125,8 @@ export function useFinance() {
       editForm.uraian = item.uraian;
       editForm.selectedKode = item.kodeAkun || "521010110";
       editForm.selectedNama = item.namaAkun || "Beban Operasional Markaz";
+      editForm.selectedKodeBidang = item.kodeBidang || "01";
+      editForm.selectedBidang = item.bidang || "Markaz / Pusat";
     } else {
       editForm.uraian = item.uraianJurnal;
       const parts = String(item.coaBaru || "").split(" - ");
@@ -126,13 +145,150 @@ export function useFinance() {
       item.uraian = editForm.uraian.trim();
       item.kodeAkun = editForm.selectedKode;
       item.namaAkun = editForm.selectedNama;
+      item.kodeBidang = editForm.selectedKodeBidang;
+      item.bidang = editForm.selectedBidang;
     } else {
       item.uraianJurnal = editForm.uraian.trim();
       item.coaBaru = `${editForm.selectedKode} - ${editForm.selectedNama}`;
     }
 
     showEditModal.value = false;
-    showToast("Perubahan COA & Deskripsi berhasil disimpan!");
+    showToast("Perubahan COA, Bidang & Deskripsi berhasil disimpan!");
+  };
+
+  // =========================================================================
+  // FITUR SPLIT TRANSAKSI PER BIDANG / PER COA
+  // =========================================================================
+  const openSplitModal = (item) => {
+    splitSourceItem.value = item;
+    const origNominal = Math.abs(item.debet || item.kredit || 0);
+
+    // Initial 2 split rows
+    const half1 = Math.round(origNominal / 2);
+    const half2 = origNominal - half1;
+
+    splitRows.value = [
+      {
+        id: "SPLIT-SUB-1",
+        kodeBidang: item.kodeBidang || "01",
+        bidang: item.bidang || "Markaz / Pusat",
+        kodeAkun: item.kodeAkun || "521010110",
+        namaAkun: item.namaAkun || "Beban Operasional Markaz",
+        uraian: item.uraian,
+        nominal: half1
+      },
+      {
+        id: "SPLIT-SUB-2",
+        kodeBidang: item.kodeBidang || "01",
+        bidang: item.bidang || "Markaz / Pusat",
+        kodeAkun: item.kodeAkun || "521010110",
+        namaAkun: item.namaAkun || "Beban Operasional Markaz",
+        uraian: item.uraian,
+        nominal: half2
+      }
+    ];
+
+    showSplitModal.value = true;
+  };
+
+  const addSplitRow = () => {
+    const parent = splitSourceItem.value;
+    splitRows.value.push({
+      id: "SPLIT-SUB-" + (splitRows.value.length + 1),
+      kodeBidang: parent?.kodeBidang || "01",
+      bidang: parent?.bidang || "Markaz / Pusat",
+      kodeAkun: parent?.kodeAkun || "521010110",
+      namaAkun: parent?.namaAkun || "Beban Operasional Markaz",
+      uraian: parent?.uraian || "",
+      nominal: 0
+    });
+  };
+
+  const removeSplitRow = (index) => {
+    if (splitRows.value.length <= 2) {
+      alert("Minimal diperlukan 2 baris alokasi untuk split.");
+      return;
+    }
+    splitRows.value.splice(index, 1);
+  };
+
+  const confirmSplitTransaction = () => {
+    const parent = splitSourceItem.value;
+    if (!parent) return;
+
+    const parentNominal = Math.abs(parent.debet || parent.kredit || 0);
+    const totalSplit = splitRows.value.reduce((s, r) => s + (parseFloat(r.nominal) || 0), 0);
+
+    if (Math.abs(totalSplit - parentNominal) > 0.01) {
+      alert(`Total split (${formatRupiah(totalSplit)}) harus sama persis dengan transaksi asal (${formatRupiah(parentNominal)})!`);
+      return;
+    }
+
+    splitCounter.value++;
+    const splitGroupId = `SPL-GRP-${String(splitCounter.value).padStart(3, '0')}`;
+
+    // Mark parent as split & hide from plain regular listing
+    parent.splitGroupId = splitGroupId;
+    parent.isSplitParent = true;
+    parent.hidden = true;
+    parent.splitCount = splitRows.value.length;
+
+    const parentIdx = pengeluaranData.value.findIndex(x => x.id === parent.id);
+
+    const generatedChildren = splitRows.value.map((row, idx) => {
+      const isDebet = parent.debet > 0;
+      return {
+        id: `SPLIT-${parent.id}-${idx + 1}`,
+        tanggal: parent.tanggal,
+        kodeBidang: row.kodeBidang,
+        bidang: row.bidang,
+        kodeAkun: row.kodeAkun,
+        namaAkun: row.namaAkun,
+        uraian: row.uraian,
+        bankRawDescription: parent.bankRawDescription || "",
+        nama: parent.nama,
+        debet: isDebet ? row.nominal : 0,
+        kredit: !isDebet ? row.nominal : 0,
+        kasBank: parent.kasBank,
+        selected: false,
+        groupId: null,
+        splitGroupId: splitGroupId,
+        isSplitChild: true,
+        isSplitParent: false,
+        splitParentId: parent.id,
+        hidden: false,
+        wasCopied: false,
+        justCopied: false,
+        isGenerated: false,
+        isDirectBankOutflow: parent.isDirectBankOutflow,
+        originalUraian: row.uraian
+      };
+    });
+
+    if (parentIdx !== -1) {
+      pengeluaranData.value.splice(parentIdx + 1, 0, ...generatedChildren);
+    } else {
+      pengeluaranData.value.push(...generatedChildren);
+    }
+
+    showSplitModal.value = false;
+    showToast(`Transaksi berhasil di-split menjadi ${splitRows.value.length} alokasi bidang!`);
+  };
+
+  const unsplitTransaction = (splitGroupId) => {
+    // Remove children
+    pengeluaranData.value = pengeluaranData.value.filter(x => !(x.splitGroupId === splitGroupId && x.isSplitChild));
+
+    // Restore parent
+    const parent = pengeluaranData.value.find(x => x.splitGroupId === splitGroupId && x.isSplitParent);
+    if (parent) {
+      parent.splitGroupId = null;
+      parent.isSplitParent = false;
+      parent.hidden = false;
+      parent.splitCount = 0;
+    }
+
+    showToast("Split transaksi telah dibatalkan & dikembalikan utuh.");
   };
 
   // =========================================================================
@@ -162,9 +318,6 @@ export function useFinance() {
     };
 
     const allBank = [...rawBsiOutflows.value, ...rawMuamalatOutflows.value];
-    const generatedBankSplitRows = [];
-
-    // PASS 1: SCORE-BASED MATCHING
     const candidatePairs = [];
 
     allBank.forEach(bItem => {
@@ -227,6 +380,9 @@ export function useFinance() {
       bItem.uraian = standardizeExpenseDescription(kkCredit.uraian, kkCredit.nama, kkCredit.kodeAkun, bItem.kasBank);
       bItem.kodeAkun = kkCredit.kodeAkun;
       bItem.namaAkun = kkCredit.namaAkun;
+      bItem.kodeBidang = kkCredit.kodeBidang || bItem.kodeBidang;
+      bItem.bidang = kkCredit.bidang || bItem.bidang;
+
       if (kkCredit.nama && kkCredit.nama !== "-") {
         bItem.nama = kkCredit.nama;
       }
@@ -257,120 +413,7 @@ export function useFinance() {
       });
     });
 
-    // PASS 2: 1-TO-N SPLIT MATCHING
-    const unmatchedBankOutflows = allBank.filter(b => !matchedBankIds.has(b.id));
-
-    unmatchedBankOutflows.forEach(bItem => {
-      const bNom = bItem.kredit;
-      const bTime = parseSortableTimestamp(bItem.tanggal);
-
-      const nearbyUnmatchedCredits = rawKas.filter(k => {
-        if (k.isEliminated) return false;
-        if (k.kkFlag !== "2" && !k.isBankRealizationExpense) return false;
-        const diff = Math.round(Math.abs(parseSortableTimestamp(k.tanggal) - bTime) / 86400000);
-        return diff <= 10;
-      });
-
-      let matchedCluster = null;
-      const dateGroups = {};
-      nearbyUnmatchedCredits.forEach(item => {
-        if (!dateGroups[item.tanggal]) dateGroups[item.tanggal] = [];
-        dateGroups[item.tanggal].push(item);
-      });
-
-      for (let tgl in dateGroups) {
-        const group = dateGroups[tgl];
-        const sum = group.reduce((acc, curr) => acc + curr.kredit, 0);
-        if (Math.abs(sum - bNom) < 1) {
-          matchedCluster = group;
-          break;
-        }
-      }
-
-      if (!matchedCluster && nearbyUnmatchedCredits.length <= 15) {
-        const findSubset = (arr, target) => {
-          let result = null;
-          const search = (index, currentSum, currentArr) => {
-            if (result) return;
-            if (Math.abs(currentSum - target) < 1 && currentArr.length > 1) {
-              result = [...currentArr];
-              return;
-            }
-            if (currentSum > target || index >= arr.length) return;
-            for (let i = index; i < arr.length; i++) {
-              search(i + 1, currentSum + arr[i].kredit, [...currentArr, arr[i]]);
-            }
-          };
-          search(0, 0, []);
-          return result;
-        };
-        matchedCluster = findSubset(nearbyUnmatchedCredits, bNom);
-      }
-
-      if (matchedCluster && matchedCluster.length > 1) {
-        bItem.matchedBridge = "SPLIT-" + bItem.id;
-        bItem.hidden = true;
-        matchedBankIds.add(bItem.id);
-
-        matchedCluster.forEach((cItem, cIdx) => {
-          cItem.isEliminated = true;
-          cItem.isCompanionBridgeCredit = true;
-
-          // Double Entry: Beban selalu di DEBET
-          generatedBankSplitRows.push({
-            id: `SPLIT-${bItem.id}-${cIdx}`,
-            tanggal: bItem.tanggal,
-            kasBank: bItem.kasBank,
-            bidang: cItem.bidang,
-            kodeAkun: cItem.kodeAkun,
-            namaAkun: cItem.namaAkun,
-            uraian: standardizeExpenseDescription(cItem.uraian, cItem.nama, cItem.kodeAkun, bItem.kasBank),
-            bankRawDescription: bItem.bankRawDescription,
-            nama: cItem.nama || bItem.nama,
-            debet: Math.abs(cItem.kredit || cItem.debet),
-            kredit: 0,
-            matchedBridge: bItem.id,
-            dateDiffDays: Math.round(Math.abs(parseSortableTimestamp(cItem.tanggal) - bTime) / 86400000),
-            selected: false,
-            groupId: null,
-            mergeId: null,
-            isMergedGroup: false,
-            hidden: false,
-            wasCopied: false,
-            justCopied: false,
-            isGenerated: false,
-            isDirectBankOutflow: true,
-            originalUraian: cItem.uraian
-          });
-        });
-
-        const matchingDebitBridge = rawKas.find(k => !k.isEliminated && (k.kpFlag === "2" || k.isBridge) && Math.abs(k.debet - bNom) < 1);
-        if (matchingDebitBridge) {
-          matchingDebitBridge.isEliminated = true;
-          matchingDebitBridge.isBridge = true;
-        }
-
-        elimBridges.push({
-          id: "AUDIT-SPLIT-" + bItem.id,
-          debitBridgeUraian: matchingDebitBridge ? matchingDebitBridge.uraian : `(Total Jembatan ${matchedCluster.length} Baris)`,
-          debitBridgeTanggal: matchingDebitBridge ? matchingDebitBridge.tanggal : "-",
-          creditExpenseUraian: `[1 Bank di-Split ke ${matchedCluster.length} Item] ${matchedCluster.map(x => x.uraian).slice(0, 2).join(", ")}...`,
-          creditExpenseTanggal: matchedCluster[0].tanggal,
-          creditExpenseCOA: "Multi-COA Sesuai Kasir",
-          creditExpenseNama: matchedCluster[0].nama || "-",
-          nominal: bNom,
-          bankUraian: bItem.bankRawDescription,
-          bankTanggal: bItem.tanggal,
-          kasBank: bItem.kasBank,
-          dateDiffDays: Math.round(Math.abs(parseSortableTimestamp(matchedCluster[0].tanggal) - bTime) / 86400000)
-        });
-      }
-    });
-
-    // =========================================================================
-    // PASS 3: STANDARISASI DOUBLE ENTRY UNTUK SEMUA DATA
-    // =========================================================================
-   const activeKasKecilTunai = rawKas.filter(k => 
+    const activeKasKecilTunai = rawKas.filter(k => 
       !k.isEliminated && 
       !k.isBridge && 
       !k.isCompanionBridgeCredit && 
@@ -380,19 +423,11 @@ export function useFinance() {
     ).map(k => {
       const rawLower = (String(k.originalUraian || "") + " " + String(k.uraian || "")).toLowerCase();
       const isKasbonCOA = String(k.kodeAkun).startsWith("113");
-      
-      // HANYA yang keterangannya pelunasan/tutup yang masuk KREDIT
-      const isKasbonClose = isKasbonCOA && (
-        rawLower.includes("pelunasan") || 
-        rawLower.includes("tutup") || 
-        rawLower.includes("selesai")
-      );
-      
+      const isKasbonClose = isKasbonCOA && (rawLower.includes("pelunasan") || rawLower.includes("tutup") || rawLower.includes("selesai"));
       const rawNom = Math.abs(k.debet !== 0 ? k.debet : k.kredit);
       
       return {
         ...k,
-        // Kasbon Baru & Beban = DEBET | Pelunasan Kasbon Saja = KREDIT
         debet: isKasbonClose ? 0 : rawNom,
         kredit: isKasbonClose ? rawNom : 0,
         uraian: standardizeExpenseDescription(k.uraian, k.nama, k.kodeAkun, k.kasBank)
@@ -414,7 +449,6 @@ export function useFinance() {
       };
     });
 
-    // Bank Outflow: Semua pengeluaran beban bank berada di DEBET
     const normalizedBankOutflows = allBank.filter(b => !b.mergeId && !b.hidden).map(b => {
       const nom = Math.abs(b.kredit !== 0 ? b.kredit : b.debet);
       return {
@@ -428,7 +462,6 @@ export function useFinance() {
     const combined = [
       ...activeKasKecilTunai,
       ...unmatchedKasirExpenses,
-      ...generatedBankSplitRows,
       ...normalizedBankOutflows
     ];
 
@@ -447,7 +480,7 @@ export function useFinance() {
       rawKasKecilExpenses.value = parseBukuBesarSheet(sheet);
       filesStatus.bukuBesar = true;
       runReconciliation();
-      showToast("Buku Besar berhasil dipasang!");
+      showToast("Buku Besar & Kode Bidang berhasil dimuat!");
     } catch (err) {
       alert("Gagal membaca Buku Besar: " + err.message);
     } finally {
@@ -550,6 +583,7 @@ export function useFinance() {
       id: "MERGED-" + Date.now(),
       tanggal: mergeForm.tanggal,
       kasBank: mergeForm.kasBank,
+      kodeBidang: "01",
       bidang: "Pengeluaran Konsolidasi Bank",
       kodeAkun: kodeAkun,
       namaAkun: namaAkun,
@@ -671,6 +705,7 @@ export function useFinance() {
         id: "GEN-" + Date.now(),
         tanggal: first.tanggal,
         kasBank: first.kasBank,
+        kodeBidang: first.kodeBidang || "01",
         bidang: "KAS / BANK BALANCING",
         kodeAkun: bankCode,
         namaAkun: bankName,
@@ -712,17 +747,14 @@ export function useFinance() {
   };
 
   const restoreHiddenPengeluaran = () => {
-    pengeluaranData.value.forEach(i => { if (!i.isMergedChild) i.hidden = false; });
+    pengeluaranData.value.forEach(i => { if (!i.isMergedChild && !i.isSplitParent) i.hidden = false; });
     showToast("Semua baris tersembunyi dipulihkan.");
   };
 
-  // =========================================================================
-  // PAYLOAD GENERATOR
-  // =========================================================================
+  // Payload Actions
   const handlePengeluaranRowAction = (item) => {
     const isDebetEntry = item.debet > 0;
     const amt = isDebetEntry ? item.debet : item.kredit;
-    
     const posCOA = isDebetEntry ? "DEBIT" : "KREDIT";
     const posBank = isDebetEntry ? "KREDIT" : "DEBIT";
 
@@ -751,7 +783,6 @@ export function useFinance() {
       const pos = item.debet > 0 ? "DEBIT" : "KREDIT";
       const amt = item.debet > 0 ? item.debet : item.kredit;
       const coaLabel = item.isGenerated ? item.kasBank : `${item.kodeAkun} - ${item.namaAkun}`;
-      
       lines.push(`${coaLabel}|${pos}|${amt}`);
     });
 
@@ -796,11 +827,12 @@ export function useFinance() {
     Object.keys(filesStatus).forEach(k => filesStatus[k] = false);
     lpjCounter.value = 0;
     mergeCounter.value = 0;
+    splitCounter.value = 0;
     showToast("Semua data berhasil direset.");
   };
 
   // =========================================================================
-  // COMPUTED PROPERTIES
+  // COMPUTED PROPERTIES (TERMASUK BIDANG & SPLIT)
   // =========================================================================
   const uploadedFilesCount = computed(() => {
     return (filesStatus.bukuBesar ? 1 : 0) + (filesStatus.bsi ? 1 : 0) + (filesStatus.muamalat ? 1 : 0) + (filesStatus.pemasukan ? 1 : 0);
@@ -811,7 +843,7 @@ export function useFinance() {
   });
 
   const hiddenPengeluaranCount = computed(() => {
-    return pengeluaranData.value.filter(i => i.hidden && !i.isMergedChild).length;
+    return pengeluaranData.value.filter(i => i.hidden && !i.isMergedChild && !i.isSplitParent).length;
   });
 
   const allBankAvailableDates = computed(() => {
@@ -858,7 +890,6 @@ export function useFinance() {
     return Array.from(set).sort();
   });
 
-  // DAFTAR LABEL KATEGORI YANG TERSEDIA SECARA DINAMIS
   const availableCategoriesPengeluaran = computed(() => {
     const set = new Set();
     pengeluaranData.value.forEach(item => {
@@ -868,7 +899,27 @@ export function useFinance() {
     return Array.from(set);
   });
 
-  // FILTERED PENGELUARAN DENGAN FILTER KATEGORI/LABEL
+  // DAFTAR KODE & NAMA BIDANG DARI DATA
+  const availableBidangList = computed(() => {
+    const map = {};
+    // Daftarkan dulu dari MASTER_BIDANG_LIST
+    MASTER_BIDANG_LIST.forEach(b => {
+      map[b.kode] = b.nama;
+    });
+
+    // Tambahkan bidang dinamis yang ditemukan dari file
+    pengeluaranData.value.forEach(i => {
+      if (i.kodeBidang && i.bidang) {
+        map[i.kodeBidang] = i.bidang;
+      }
+    });
+
+    return Object.keys(map).sort().map(k => ({
+      kode: k,
+      nama: map[k]
+    }));
+  });
+
   const filteredPengeluaran = computed(() => {
     return pengeluaranData.value.filter(item => {
       if (item.hidden) return false;
@@ -876,7 +927,6 @@ export function useFinance() {
       const mKas = filterPengeluaran.kasBank === "ALL" || item.kasBank === filterPengeluaran.kasBank;
       const mPenerima = filterPengeluaran.penerima === "ALL" || item.nama === filterPengeluaran.penerima;
       
-      // Filter Kategori/Label Transaksi
       let mKat = true;
       if (filterPengeluaran.kategori && filterPengeluaran.kategori !== "ALL") {
         const badge = getCategoryBadge(item);
@@ -894,6 +944,56 @@ export function useFinance() {
       
       return mDate && mKas && mPenerima && mKat && mSource && mQ;
     });
+  });
+
+  // DATA TERFILTER KHUSUS TAB BIDANG
+  const filteredBidangData = computed(() => {
+    return pengeluaranData.value.filter(item => {
+      if (item.hidden && !item.isSplitParent) return false;
+
+      // Filter Kode Bidang
+      const mBidang = filterBidang.kodeBidang === "ALL" || item.kodeBidang === filterBidang.kodeBidang;
+      const mDate = filterBidang.date === "ALL" || item.tanggal === filterBidang.date;
+      const mKas = filterBidang.kasBank === "ALL" || item.kasBank === filterBidang.kasBank;
+
+      // Filter Status Split
+      let mSplit = true;
+      if (filterBidang.statusSplit === "SPLIT") mSplit = Boolean(item.isSplitChild || item.isSplitParent);
+      else if (filterBidang.statusSplit === "UNSPLIT") mSplit = !item.isSplitChild && !item.isSplitParent;
+
+      const q = filterBidang.search.toLowerCase().trim();
+      const mQ = !q || 
+        (item.kodeBidang && item.kodeBidang.toLowerCase().includes(q)) ||
+        (item.bidang && item.bidang.toLowerCase().includes(q)) ||
+        (item.uraian && item.uraian.toLowerCase().includes(q)) ||
+        (item.namaAkun && item.namaAkun.toLowerCase().includes(q)) ||
+        (item.nama && item.nama.toLowerCase().includes(q));
+
+      return mBidang && mDate && mKas && mSplit && mQ;
+    });
+  });
+
+  // Rekap summary nominal per Bidang
+  const summaryPerBidang = computed(() => {
+    const summary = {};
+    availableBidangList.value.forEach(b => {
+      summary[b.kode] = { kode: b.kode, nama: b.nama, totalNominal: 0, totalTrx: 0 };
+    });
+
+    pengeluaranData.value.forEach(item => {
+      if (item.isSplitParent) return; // jangan hitung induk yang sudah di-split
+      if (item.hidden) return;
+
+      const k = item.kodeBidang || "01";
+      if (!summary[k]) {
+        summary[k] = { kode: k, nama: item.bidang || "Lainnya", totalNominal: 0, totalTrx: 0 };
+      }
+      const nom = Math.abs(item.debet || item.kredit || 0);
+      summary[k].totalNominal += nom;
+      summary[k].totalTrx += 1;
+    });
+
+    return Object.values(summary).filter(s => s.totalTrx > 0);
   });
 
   const totalDebitPengeluaran = computed(() => filteredPengeluaran.value.reduce((s, i) => s + (i.debet || 0), 0));
@@ -924,12 +1024,14 @@ export function useFinance() {
 
   return {
     activeTab, isLoading, loadingMessage, showLPJModal, showBankDetailModal, showMergeModal, showEditModal,
+    showSplitModal, splitSourceItem, splitRows,
     selectedBankDetailItem, selectedBankBalanceDate, coaSearchQuery, editForm, filesStatus,
     rawKasKecilExpenses, rawBsiOutflows, rawMuamalatOutflows, eliminatedBridges,
     pengeluaranData, pemasukanData, mergeForm, lpjUraian, lpjSummary,
-    filterPengeluaran, filterPemasukan, toast,
+    filterPengeluaran, filterBidang, filterPemasukan, toast,
     showToast, copyNominal, uploadBukuBesar, uploadBsiCsv, uploadMuamalatCsv, uploadPemasukanExcel,
     openMergeModal, confirmMergeGroup, unmergeGroup, calculateLPJGroup, confirmLPJGroup, ungroupLPJ,
+    openSplitModal, addSplitRow, removeSplitRow, confirmSplitTransaction, unsplitTransaction,
     hidePengeluaranRow, restoreHiddenPengeluaran, handlePengeluaranRowAction, handleCopyLPJBundle, handlePemasukanRowAction,
     openEditModal, confirmSaveEdit,
     exportPengeluaranExcel: () => exportPengeluaranToExcel(filteredPengeluaran.value),
@@ -938,6 +1040,7 @@ export function useFinance() {
     uploadedFilesCount, selectedCountPengeluaran, hiddenPengeluaranCount, allBankAvailableDates,
     computedBankBalances, filteredPengeluaran, totalDebitPengeluaran, totalKreditPengeluaran,
     availableDatesPengeluaran, availableKasBanksPengeluaran, availablePenerimaPengeluaran, availableCategoriesPengeluaran,
+    availableBidangList, filteredBidangData, summaryPerBidang,
     filteredPemasukan, totalTransPemasukan, totalNominalPemasukan, availableDatesPemasukan, availableBanksPemasukan,
     filteredCOAList, expandedLPJGroups, toggleExpandLPJ
   };

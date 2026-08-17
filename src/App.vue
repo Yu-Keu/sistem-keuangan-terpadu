@@ -49,6 +49,7 @@
     >
       <TabUpload v-show="activeTab === 'upload'" />
       <TabPengeluaran v-show="activeTab === 'pengeluaran'" />
+      <TabBidang v-show="activeTab === 'bidang'" />
       <TabPemasukan v-show="activeTab === 'pemasukan'" />
       <TabAudit v-show="activeTab === 'audit'" />
       <TabMasterCoa v-show="activeTab === 'masterCoa'" />
@@ -60,6 +61,7 @@
     <ModalBankDetail />
     <ModalLPJ />
     <ModalEditTransaction />
+    <ModalSplitTransaction />
   </div>
 </template>
 
@@ -69,6 +71,7 @@ import AppHeader from "./components/AppHeader.vue";
 import FloatingActions from "./components/FloatingActions.vue";
 import TabUpload from "./components/TabUpload.vue";
 import TabPengeluaran from "./components/TabPengeluaran.vue";
+import TabBidang from "./components/TabBidang.vue";
 import TabPemasukan from "./components/TabPemasukan.vue";
 import TabAudit from "./components/TabAudit.vue";
 import TabMasterCoa from "./components/TabMasterCoa.vue";
@@ -76,6 +79,7 @@ import ModalMerge from "./components/modals/ModalMerge.vue";
 import ModalBankDetail from "./components/modals/ModalBankDetail.vue";
 import ModalLPJ from "./components/modals/ModalLPJ.vue";
 import ModalEditTransaction from "./components/modals/ModalEditTransaction.vue";
+import ModalSplitTransaction from "./components/modals/ModalSplitTransaction.vue";
 
 const { activeTab, isLoading, loadingMessage, toast } = useFinance();
 </script>
