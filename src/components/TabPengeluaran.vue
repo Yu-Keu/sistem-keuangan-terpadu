@@ -614,13 +614,13 @@ const openBankDetail = (item) => {
                     v-if="!item.selected"
                     class="flex items-center justify-center gap-1"
                   >
-                    <button
+                    <!-- <button
                       @click="openEditModal(item, 'pengeluaran')"
                       class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-1.5 py-1 rounded-lg text-[10px] font-semibold transition"
                       title="Edit"
                     >
                       Edit
-                    </button>
+                    </button> -->
                     <button
                       @click="handlePengeluaranRowAction(item)"
                       :class="
