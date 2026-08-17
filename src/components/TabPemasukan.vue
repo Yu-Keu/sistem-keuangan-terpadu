@@ -1,14 +1,14 @@
 <template>
   <section class="space-y-4">
-    <!-- Filter & Toolbar -->
+    <!-- Filter Toolbar -->
     <div
-      class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-wrap items-center justify-between gap-3"
+      class="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs flex flex-wrap items-center justify-between gap-3"
     >
-      <div class="flex flex-wrap items-center gap-3">
+      <div class="flex flex-wrap items-center gap-2 text-xs">
         <!-- Filter Tanggal -->
         <select
           v-model="filterPemasukan.date"
-          class="border border-slate-200 rounded-xl px-3 py-1.5 text-xs bg-slate-50 font-semibold text-slate-700 outline-none focus:border-emerald-500"
+          class="border border-slate-200 rounded-xl px-3 py-1.5 bg-slate-50 font-semibold text-slate-700 outline-none focus:border-emerald-500 focus:bg-white transition"
         >
           <option value="ALL">Semua Tanggal</option>
           <option v-for="d in availableDatesPemasukan" :key="d" :value="d">
@@ -19,7 +19,7 @@
         <!-- Filter Kas / Bank -->
         <select
           v-model="filterPemasukan.bank"
-          class="border border-slate-200 rounded-xl px-3 py-1.5 text-xs bg-slate-50 font-semibold text-slate-700 outline-none focus:border-emerald-500"
+          class="border border-slate-200 rounded-xl px-3 py-1.5 bg-slate-50 font-semibold text-slate-700 outline-none focus:border-emerald-500 focus:bg-white transition"
         >
           <option value="ALL">Semua Kas/Bank</option>
           <option v-for="b in availableBanksPemasukan" :key="b" :value="b">
@@ -27,18 +27,18 @@
           </option>
         </select>
 
-        <!-- Search Input dengan Tombol Clear -->
+        <!-- Search Input -->
         <div class="relative">
           <input
             type="text"
             v-model="filterPemasukan.search"
             placeholder="Cari uraian, pos, COA..."
-            class="border border-slate-200 rounded-xl pl-3 pr-8 py-1.5 text-xs w-64 bg-slate-50 outline-none focus:border-emerald-500"
+            class="border border-slate-200 rounded-xl pl-3 pr-7 py-1.5 w-60 bg-slate-50 outline-none focus:border-emerald-500 focus:bg-white transition placeholder:text-slate-400 font-medium"
           />
           <span
             v-if="filterPemasukan.search"
             @click="filterPemasukan.search = ''"
-            class="absolute right-2.5 top-1.5 text-xs text-slate-400 cursor-pointer hover:text-slate-600 font-bold"
+            class="absolute right-2 top-1.5 text-slate-400 cursor-pointer hover:text-slate-700 font-bold"
             >✕</span
           >
         </div>
@@ -47,29 +47,28 @@
       <!-- Tombol Download Excel -->
       <button
         @click="exportPemasukanExcel"
-        class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-xl font-bold shadow-xs transition flex items-center gap-1.5"
+        class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-xl font-bold shadow-xs transition"
       >
-        <span>📥 Download Excel Jurnal Pemasukan</span>
+        Download Excel
       </button>
     </div>
 
-    <!-- Main Pemasukan Table (Layout Proporsional) -->
+    <!-- Main Pemasukan Table -->
     <div
-      class="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden"
+      class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden"
     >
       <div class="overflow-x-auto">
         <table class="min-w-full divide-y divide-slate-200 text-xs">
           <thead
-            class="bg-slate-50/90 text-slate-500 font-semibold border-b border-slate-200"
+            class="bg-slate-50 text-slate-600 font-semibold select-none border-b border-slate-200"
           >
             <tr>
               <th class="px-3 py-3 text-left w-32">Tanggal & Bank</th>
-              <th class="px-3 py-3 text-left w-64 text-emerald-900">
+              <th class="px-3 py-3 text-left w-64 text-emerald-950">
                 COA Penerimaan (Kredit)
               </th>
-              <!-- KOLOM UTAMA: DIBUAT PALING LEBAR -->
               <th class="px-4 py-3 text-left">
-                Uraian Jurnal Terbentuk (Debet Kas/Bank ➔ Kredit COA)
+                Uraian Jurnal Terbentuk (Debet Kas/Bank - Kredit COA)
               </th>
               <th class="px-2 py-3 text-center w-16">Trx</th>
               <th class="px-4 py-3 text-right w-36">Total Nominal (Rp)</th>
@@ -82,14 +81,14 @@
               :key="item.id"
               :class="
                 item.justCopied
-                  ? 'bg-emerald-100/70 font-medium'
+                  ? 'bg-emerald-50/80 font-medium'
                   : item.wasCopied
-                    ? 'bg-emerald-50/60 font-medium'
-                    : 'hover:bg-slate-50/80'
+                    ? 'bg-slate-50/70 font-medium'
+                    : 'hover:bg-slate-50'
               "
               class="transition"
             >
-              <!-- 1. Tanggal & Kas/Bank (Ringkas Stacked) -->
+              <!-- 1. Tanggal & Kas/Bank -->
               <td class="px-3 py-2.5 whitespace-nowrap">
                 <div class="font-mono font-bold text-slate-700 text-xs">
                   {{ item.tglFormatted }}
@@ -101,10 +100,11 @@
                       'bg-teal-50 text-teal-800 border border-teal-200':
                         item.kasBank === 'BSI' || item.kasBank.includes('BSI'),
                       'bg-purple-50 text-purple-800 border border-purple-200':
-                        item.kasBank === 'Muamalat' ||
-                        item.kasBank.includes('Muamalat'),
-                      'bg-slate-100 text-slate-800 border border-slate-200':
-                        item.kasBank.includes('Kas'),
+                        item.kasBank === 'Muamalat' || item.kasBank.includes('Muamalat'),
+                      'bg-emerald-50 text-emerald-800 border border-emerald-200':
+                        item.kasBank.includes('Kecil') || item.kasBank === 'Kas Kecil',
+                      'bg-amber-50 text-amber-800 border border-amber-200':
+                        item.kasBank.includes('Besar') || item.kasBank === 'Kas Besar',
                     }"
                   >
                     {{ item.kasBank }}
@@ -112,11 +112,11 @@
                 </div>
               </td>
 
-              <!-- 2. COA Penerimaan + Pos Asli & Kategori Akrual Ringkas -->
+              <!-- 2. COA Penerimaan + Pos Asli -->
               <td class="px-3 py-2.5">
                 <div
                   @click="openEditModal(item, 'pemasukan')"
-                  class="bg-emerald-50/80 hover:bg-emerald-100/90 border border-emerald-200/70 p-2 rounded-xl cursor-pointer transition group"
+                  class="bg-emerald-50/80 hover:bg-emerald-100/90 border border-emerald-200 p-2 rounded-lg cursor-pointer transition group"
                   title="Klik untuk ubah COA"
                 >
                   <div class="flex items-center justify-between">
@@ -126,46 +126,40 @@
                       {{ item.coaBaru }}
                     </span>
                     <span
-                      class="text-[9px] text-emerald-600 opacity-0 group-hover:opacity-100 transition shrink-0 ml-1"
-                      >✏️ Edit</span
+                      class="text-[9px] text-emerald-600 opacity-0 group-hover:opacity-100 transition font-bold shrink-0 ml-1"
                     >
-                  </div>
-                  <!-- Sub-info: Pos Asli & Kategori Akrual -->
-                  <div
-                    class="flex items-center gap-1.5 mt-1 text-[10px] text-slate-500"
-                  >
-                    <span
-                      class="truncate max-w-[140px]"
-                      :title="`Pos Asli: ${item.posPenerimaan}`"
-                    >
-                      📁 {{ item.posPenerimaan }}
+                      Edit
                     </span>
                   </div>
+                  <!-- Sub-info: Pos Asli -->
+                  <!-- <div class="mt-1 text-[10px] text-slate-500 font-medium">
+                    <span class="truncate block max-w-[200px]" :title="item.posPenerimaan">
+                      Pos: {{ item.posPenerimaan }}
+                    </span>
+                  </div> -->
                 </div>
               </td>
 
-              <!-- 3. URAIAN JURNAL TERBENTUK (LELUASA & JELAS) -->
+              <!-- 3. Uraian Jurnal Terbentuk & Badge Kategori Akrual -->
               <td class="px-4 py-2.5">
                 <div class="space-y-1">
-                  <div class="flex items-center gap-2 flex-wrap">
+                  <div class="flex items-center gap-1.5 flex-wrap">
                     <!-- Badge Kategori Akrual -->
                     <span
-                      class="px-2 py-0.5 rounded text-[9px] font-bold border uppercase shrink-0"
+                      class="px-1.5 py-0.5 rounded text-[9px] font-bold border uppercase shrink-0"
                       :class="{
                         'bg-emerald-100 text-emerald-800 border-emerald-300':
                           item.kategori === 'TAPEL SEKARANG',
-                        'bg-amber-100 text-amber-800 border-amber-300':
-                          item.kategori === 'TAPEL AKAN DATANG' ||
-                          item.kategori === 'BULAN DEPAN',
+                        'bg-amber-100 text-amber-900 border-amber-300':
+                          item.kategori === 'TAPEL AKAN DATANG' || item.kategori === 'BULAN DEPAN',
                         'bg-sky-100 text-sky-800 border-sky-300':
-                          item.kategori === 'TAPEL LALU' ||
-                          item.kategori === 'BULAN LALU',
+                          item.kategori === 'TAPEL LALU' || item.kategori === 'BULAN LALU',
                       }"
                     >
                       {{ item.kategori }}
                     </span>
 
-                    <!-- Teks Uraian Bebas & Jelas -->
+                    <!-- Teks Uraian -->
                     <span
                       @click="openEditModal(item, 'pemasukan')"
                       class="text-slate-900 font-medium text-xs hover:text-emerald-700 cursor-pointer transition leading-relaxed"
@@ -196,13 +190,13 @@
               <!-- 6. Aksi (Edit & Copy) -->
               <td class="px-3 py-2.5 text-center">
                 <div class="flex items-center justify-center gap-1">
-                  <button
+                  <!-- <button
                     @click="openEditModal(item, 'pemasukan')"
-                    class="bg-slate-100 hover:bg-slate-200 text-slate-700 p-1.5 rounded-lg text-[10px] font-semibold transition"
+                    class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-1.5 py-1 rounded-lg text-[10px] font-semibold transition"
                     title="Edit COA & Uraian"
                   >
-                    ✏️
-                  </button>
+                    Edit
+                  </button> -->
                   <button
                     @click="handlePemasukanRowAction(item)"
                     :class="
@@ -212,12 +206,10 @@
                           ? 'bg-emerald-800 text-white'
                           : 'bg-slate-800 hover:bg-slate-700 text-white'
                     "
-                    class="px-2.5 py-1 text-[10px] rounded-lg font-semibold transition min-w-[55px]"
+                    class="px-2 py-1 text-[10px] rounded-lg font-semibold transition min-w-[48px]"
                     title="Salin Payload Jurnal Pemasukan"
                   >
-                    {{
-                      item.justCopied ? "✓" : item.wasCopied ? "Lagi" : "Copy"
-                    }}
+                    {{ item.justCopied ? "OK" : item.wasCopied ? "Lagi" : "Copy" }}
                   </button>
                 </div>
               </td>
@@ -238,15 +230,15 @@
             <tr>
               <td
                 colspan="3"
-                class="px-4 py-3.5 text-right uppercase text-[10px] text-slate-500 font-semibold"
+                class="px-4 py-3 text-right uppercase text-[10px] text-slate-500 font-semibold"
               >
                 Total Terfilter
               </td>
-              <td class="px-2 py-3.5 text-center font-mono text-slate-700">
+              <td class="px-2 py-3 text-center font-mono text-slate-700">
                 {{ totalTransPemasukan }}
               </td>
               <td
-                class="px-4 py-3.5 text-right font-mono text-xs text-emerald-950 font-bold"
+                class="px-4 py-3 text-right font-mono text-xs text-emerald-950 font-bold"
               >
                 {{ formatRupiah(totalNominalPemasukan) }}
               </td>
