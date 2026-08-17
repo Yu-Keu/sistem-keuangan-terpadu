@@ -205,11 +205,12 @@ const openBankDetail = (item) => {
                 :key="'header-' + item.groupId"
                 class="bg-emerald-50/90 border-y-2 border-emerald-200 font-medium"
               >
-                <span class="hidden">{{
-                  renderedGroupHeaders.add(item.groupId)
-                }}</span>
 
                 <td class="px-3 py-2.5 text-center">
+                  <span class="hidden">{{
+                    renderedGroupHeaders.add(item.groupId)
+                  }}</span>
+                  
                   <div class="flex flex-col items-center gap-1">
                     <span
                       class="bg-emerald-600 text-white font-bold text-[9px] px-2 py-0.5 rounded-full shadow-xs"
