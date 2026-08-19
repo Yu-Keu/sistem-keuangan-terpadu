@@ -200,8 +200,12 @@ export function determineCOA(posAsli, ketItem, kategoriAkrual) {
   if (combined.includes("PSB") || combined.includes("PENDAFTARAN")) return "421010102 - Pendapatan Pendaftaran PSB";
   if (combined.includes("BANGUNAN") || combined.includes("PENGEMBANGAN")) return "421010103 - Pendapatan Pembangunan-DU PSB";
   if (combined.includes("DAFTAR ULANG") || combined.includes("BUKU") || combined.includes("UJIAN")) return "421010104 - Pendapatan Tahunan-DU PSB";
+  if (combined.includes("BIAYA KESEHATAN")) return "423010105 -	Pendapatan Lain";
   if (combined.includes("SERAGAM")) return "421010105 - Pendapatan Perlengkapan-DU PSB";
   if (combined.includes("TABUNGAN")) return "213010108 - Dana Titipan Tabungan Santri";
+  if (combined.includes("KEGIATAN")) return "423010103 - Penerimaan Kegiatan-Program";
+  if (combined.includes("PERLENGKAPAN ASRAMA")) return "421010105 - Pendapatan Perlengkapan-DU PSB";
+  if (combined.includes("PERLENGKAPAN SEKOLAH")) return "421010105 - Pendapatan Perlengkapan-DU PSB";
   return "423010105 - Pendapatan Lain";
 }
 
