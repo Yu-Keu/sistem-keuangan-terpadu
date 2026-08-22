@@ -798,13 +798,17 @@ export function useFinance() {
   };
 
   const handlePemasukanRowAction = (item) => {
-    const nom = Math.abs(item.totalPenerimaan);
+    const isNegative = (item.totalPenerimaan || 0) < 0;
+    const nom = Math.abs(item.totalPenerimaan || 0);
     const tgl = (item.tglFormatted || "").replace(/-/g, '/');
+
+    const posBank = isNegative ? "KREDIT" : "DEBIT";
+    const posCOA = isNegative ? "DEBIT" : "KREDIT";
 
     const payload = [
       `${tgl}|${item.uraianJurnal}`,
-      `${item.kasBank}|DEBIT|${nom}`,
-      `${item.coaBaru}|KREDIT|${nom}`
+      `${item.kasBank}|${posBank}|${nom}`,
+      `${item.coaBaru}|${posCOA}|${nom}`
     ].join("\n");
 
     navigator.clipboard.writeText(payload).then(() => {

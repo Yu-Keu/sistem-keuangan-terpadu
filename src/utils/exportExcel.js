@@ -103,14 +103,23 @@ export function exportPemasukanToExcel(filteredData) {
   let batch = 1;
 
   filteredData.forEach(item => {
-    const nom = Math.abs(item.totalPenerimaan);
+    const isNegative = (item.totalPenerimaan || 0) < 0;
+    const nom = Math.abs(item.totalPenerimaan || 0);
     const bank = getBankDetails(item.kasBank);
     const parts = String(item.coaBaru || "").split(" - ");
     const coaCode = parts[0] ? parts[0].trim() : "423010105";
     const coaName = parts[1] ? parts[1].trim() : item.coaBaru;
+    const tgl = (item.tglFormatted || "").replace(/-/g, '/');
 
-    wsData.push([batch, item.tglFormatted.replace(/-/g, '/'), item.uraianJurnal, bank.code, bank.name, "DEBIT", nom, 0]);
-    wsData.push([batch, item.tglFormatted.replace(/-/g, '/'), item.uraianJurnal, coaCode, coaName, "KREDIT", 0, nom]);
+    if (!isNegative) {
+      // 1. Pemasukan Normal (Positif): DEBIT Kas/Bank, KREDIT Akun COA
+      wsData.push([batch, tgl, item.uraianJurnal, bank.code, bank.name, "DEBIT", nom, 0]);
+      wsData.push([batch, tgl, item.uraianJurnal, coaCode, coaName, "KREDIT", 0, nom]);
+    } else {
+      // 2. Koreksi/Minus (Negatif): DIBALIK -> DEBIT Akun COA, KREDIT Kas/Bank
+      wsData.push([batch, tgl, item.uraianJurnal, coaCode, coaName, "DEBIT", nom, 0]);
+      wsData.push([batch, tgl, item.uraianJurnal, bank.code, bank.name, "KREDIT", 0, nom]);
+    }
     batch++;
   });
 
