@@ -1,3 +1,9 @@
+/**
+ * ======================================================================
+ * FILE: src/constants/coa.js
+ * ======================================================================
+ */
+
 // ==========================================
 // 1. MASTER CHART OF ACCOUNTS (COA)
 // ==========================================
@@ -184,17 +190,20 @@ export const MASTER_COA_LIST = [
 
 // Kata kunci yang SELALU dialokasikan ke Utang Jangka Pendek Lainnya
 const FORCE_UTANG_JANGKA_PENDEK_KEYS = [
-  "LAUNDRY", 
-  "HASIL USAHA", 
-  "PARKIR", 
-  "IFTHOR", 
   "XENDIT", 
-  "TITIP TRANSFER", 
-  "GUEST HOUSE"
+  "SALAH TRANSFER"
 ];
 
 // Mapping kata kunci pendapatan/penerimaan umum
 const COA_REVENUE_MAP = [
+  { 
+    keys: ["TITIP TRANSFER"], 
+    coa: "213010103 - Dana Titipan Tabungan Pegawai" 
+  },
+  { 
+    keys: ["IFTHOR"], 
+    coa: "423010102 - Pendapatan Bantuan-Sumbangan dan Lainnya" 
+  },
   { 
     keys: ["SPP", "PONDOKAN", "IWS"], 
     coa: "421010101 - Pendapatan IWS (Infaq Wali-Santri/Murid)" 
@@ -202,10 +211,6 @@ const COA_REVENUE_MAP = [
   { 
     keys: ["DONASI BAKSOS"], 
     coa: "423010102 - Pendapatan Bantuan-Sumbangan dan Lainnya" 
-  },
-  { 
-    keys: ["SALAH TRANSFER"], 
-    coa: "213010199 - Utang Jangka Pendek Lainnya" 
   },
   { 
     keys: ["PSB", "PENDAFTARAN"], 

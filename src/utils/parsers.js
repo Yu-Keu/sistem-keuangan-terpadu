@@ -275,6 +275,14 @@ export function parseMuamalatCsvText(text) {
   return { outflows, allRows };
 }
 
+// Master Pos Unit Usaha yang wajib digabung
+const UNIT_USAHA_POS_MAP = [
+  { key: "LAUNDRY", label: "Laundry" },
+  { key: "HASIL USAHA", label: "Hasil Usaha" },
+  { key: "PARKIR", label: "Parkir" },
+  { key: "GUEST HOUSE", label: "Guest House" }
+];
+
 export function parsePemasukanExcelSheet(sheet) {
   const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
   let headerIdx = -1;
@@ -316,6 +324,44 @@ export function parsePemasukanExcelSheet(sheet) {
     const targetTapel = String(row[10] || "").trim();
     const ketItem = String(row[14] || row[13] || "").trim();
 
+    const combinedUpper = `${posPenerimaan} ${ketItem}`.toUpperCase();
+
+    // -------------------------------------------------------------
+    // CEK APAKAH TERMASUK KELOMPOK POS UNIT USAHA YANG DIGABUNG
+    // -------------------------------------------------------------
+    const matchedUnit = UNIT_USAHA_POS_MAP.find(u => combinedUpper.includes(u.key));
+
+    if (matchedUnit) {
+      // Grouping khusus Unit Usaha per Tgl + per Kas/Bank
+      const key = `${tglFormatted}___${kasBank}___BUNDLE_UNIT_USAHA`;
+      const coaUnitUsaha = "213010199 - Utang Jangka Pendek Lainnya";
+
+      if (!groups[key]) {
+        groups[key] = {
+          id: "INC-UU-" + key,
+          dateObj,
+          tglFormatted,
+          kasBank,
+          posPenerimaan: "UNIT USAHA",
+          targetTapel: "",
+          kategori: "TAPEL SEKARANG",
+          coaBaru: coaUnitUsaha,
+          isUnitUsahaBundle: true,
+          jmlTrans: 0,
+          totalPenerimaan: 0,
+          activeUnits: new Set()
+        };
+      }
+
+      groups[key].jmlTrans++;
+      groups[key].totalPenerimaan += penerimaan;
+      groups[key].activeUnits.add(matchedUnit.label);
+      return;
+    }
+
+    // -------------------------------------------------------------
+    // PROSES TRANSAKSI NON-UNIT USAHA (NORMAL)
+    // -------------------------------------------------------------
     const y = dateObj.getFullYear();
     const m = dateObj.getMonth() + 1;
     const transTapel = m >= 7 ? `${y}/${y + 1}` : `${y - 1}/${y}`;
@@ -335,8 +381,18 @@ export function parsePemasukanExcelSheet(sheet) {
 
     if (!groups[key]) {
       groups[key] = {
-        id: "INC-" + key, dateObj, tglFormatted, kasBank, posPenerimaan, targetTapel, kategori, coaBaru,
-        jmlTrans: 0, totalPenerimaan: 0, keteranganSet: new Set()
+        id: "INC-" + key,
+        dateObj,
+        tglFormatted,
+        kasBank,
+        posPenerimaan,
+        targetTapel,
+        kategori,
+        coaBaru,
+        isUnitUsahaBundle: false,
+        jmlTrans: 0,
+        totalPenerimaan: 0,
+        keteranganSet: new Set()
       };
     }
 
@@ -346,16 +402,33 @@ export function parsePemasukanExcelSheet(sheet) {
   });
 
   return Object.values(groups).map(g => {
-    let detailStr = Array.from(g.keteranganSet).slice(0, 2).join(", ");
-    let uraianFinal = `Penerimaan ${g.posPenerimaan}`;
-    if (g.targetTapel) uraianFinal += ` T.A ${g.targetTapel}`;
-    if (detailStr) uraianFinal += ` (${detailStr})`;
+    let uraianFinal = "";
+
+    if (g.isUnitUsahaBundle) {
+      // Format Dinamis: Penerimaan Unit Usaha [Kas/Bank] (Laundry, Parkir)
+      const listActive = Array.from(g.activeUnits).join(", ");
+      uraianFinal = `Penerimaan Unit Usaha via ${g.kasBank} (${listActive})`;
+    } else {
+      let detailStr = Array.from(g.keteranganSet).slice(0, 2).join(", ");
+      uraianFinal = `Penerimaan ${g.posPenerimaan}`;
+      if (g.targetTapel) uraianFinal += ` T.A ${g.targetTapel}`;
+      if (detailStr) uraianFinal += ` (${detailStr})`;
+    }
 
     return {
-      id: g.id, dateObj: g.dateObj, tglFormatted: g.tglFormatted, kasBank: g.kasBank,
-      posPenerimaan: g.posPenerimaan, targetTapel: g.targetTapel, kategori: g.kategori,
-      coaBaru: g.coaBaru, jmlTrans: g.jmlTrans, totalPenerimaan: g.totalPenerimaan,
-      uraianJurnal: uraianFinal, wasCopied: false, justCopied: false
+      id: g.id,
+      dateObj: g.dateObj,
+      tglFormatted: g.tglFormatted,
+      kasBank: g.kasBank,
+      posPenerimaan: g.posPenerimaan,
+      targetTapel: g.targetTapel,
+      kategori: g.kategori,
+      coaBaru: g.coaBaru,
+      jmlTrans: g.jmlTrans,
+      totalPenerimaan: g.totalPenerimaan,
+      uraianJurnal: uraianFinal,
+      wasCopied: false,
+      justCopied: false
     };
   }).sort((a, b) => a.dateObj - b.dateObj);
 }
