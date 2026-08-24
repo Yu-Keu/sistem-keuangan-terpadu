@@ -198,7 +198,7 @@ const FORCE_UTANG_JANGKA_PENDEK_KEYS = [
 const COA_REVENUE_MAP = [
   { 
     keys: ["TITIP TRANSFER"], 
-    coa: "213010103 - Dana Titipan Tabungan Pegawai" 
+    coa: "213010199 - Utang Jangka Pendek Lainnya" 
   },
   { 
     keys: ["IFTHOR"], 
