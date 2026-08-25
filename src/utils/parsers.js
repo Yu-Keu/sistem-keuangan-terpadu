@@ -8,6 +8,34 @@ import * as XLSX from "xlsx";
 import { parseIndonesianNumber, formatBankDateString } from "./formatters.js";
 import { deduceBankExpenseCOA, determineCOA } from "../constants/coa.js";
 
+// Kamus Nama Bulan Indonesia
+const INDO_MONTH_MAP = {
+  januari: 1, jan: 1,
+  februari: 2, feb: 2,
+  maret: 3, mar: 3,
+  april: 4, apr: 4,
+  mei: 5, may: 5,
+  juni: 6, jun: 6,
+  juli: 7, jul: 7,
+  agustus: 8, agt: 8, agu: 8,
+  september: 9, sep: 9,
+  oktober: 10, okt: 10,
+  november: 11, nov: 11,
+  desember: 12, des: 12
+};
+
+function extractMonthNumber(text) {
+  if (!text) return null;
+  const clean = text.toLowerCase();
+  for (const [name, num] of Object.entries(INDO_MONTH_MAP)) {
+    const regex = new RegExp(`(?:\\b|\\()${name}(?:\\b|\\))`, "i");
+    if (regex.test(clean)) {
+      return num;
+    }
+  }
+  return null;
+}
+
 export function parseCsvLine(text) {
   let p = '', r = [], q = false;
   for (let i = 0; i < text.length; i++) {
@@ -43,7 +71,6 @@ export function parseBukuBesarSheet(sheet) {
   rows.forEach((row, idx) => {
     if (!row || row.length === 0) return;
     
-    // 1. Parsing Tanggal
     let tgl = "";
     const rawTgl = row[0];
     if (typeof rawTgl === "number") {
@@ -59,7 +86,6 @@ export function parseBukuBesarSheet(sheet) {
       }
     }
 
-    // KOLOM B: KODE BIDANG | KOLOM C: NAMA BIDANG
     const kodeBidang = String(row[1] || "").trim();
     const bidang = String(row[2] || "").trim();
     const kodeAkun = String(row[3] || "").trim();
@@ -72,7 +98,6 @@ export function parseBukuBesarSheet(sheet) {
     let rawDebet = parseIndonesianNumber(row[9]);
     let rawKredit = parseIndonesianNumber(row[11]);
 
-    // Normalisasi Nilai Negatif
     let debet = 0;
     let kredit = 0;
 
@@ -321,18 +346,23 @@ export function parsePemasukanExcelSheet(sheet) {
 
     const tglFormatted = `${String(dateObj.getDate()).padStart(2, "0")}/${String(dateObj.getMonth() + 1).padStart(2, "0")}/${dateObj.getFullYear()}`;
     const posPenerimaan = String(row[9] || "PENERIMAAN LAIN").trim();
-    const targetTapel = String(row[10] || "").trim();
+    let targetTapel = String(row[10] || "").trim();
     const ketItem = String(row[14] || row[13] || "").trim();
 
     const combinedUpper = `${posPenerimaan} ${ketItem}`.toUpperCase();
 
+    // Jika targetTapel kosong di kolom, coba ekstrak format YYYY/YYYY dari teks
+    if (!targetTapel) {
+      const matchTapel = combinedUpper.match(/(\d{4}\/\d{4})/);
+      if (matchTapel) targetTapel = matchTapel[1];
+    }
+
     // -------------------------------------------------------------
-    // CEK APAKAH TERMASUK KELOMPOK POS UNIT USAHA YANG DIGABUNG
+    // 1. CEK APAKAH POS UNIT USAHA YANG DIGABUNG
     // -------------------------------------------------------------
     const matchedUnit = UNIT_USAHA_POS_MAP.find(u => combinedUpper.includes(u.key));
 
     if (matchedUnit) {
-      // Grouping khusus Unit Usaha per Tgl + per Kas/Bank
       const key = `${tglFormatted}___${kasBank}___BUNDLE_UNIT_USAHA`;
       const coaUnitUsaha = "213010199 - Utang Jangka Pendek Lainnya";
 
@@ -360,13 +390,16 @@ export function parsePemasukanExcelSheet(sheet) {
     }
 
     // -------------------------------------------------------------
-    // PROSES TRANSAKSI NON-UNIT USAHA (NORMAL)
+    // 2. PROSES TRANSAKSI REGULER (LOGIKA AKRUAL TAPEL & BULAN)
     // -------------------------------------------------------------
     const y = dateObj.getFullYear();
-    const m = dateObj.getMonth() + 1;
+    const m = dateObj.getMonth() + 1; // 1-12
     const transTapel = m >= 7 ? `${y}/${y + 1}` : `${y - 1}/${y}`;
+    const transAbsMonth = y * 12 + m;
 
     let kategori = "TAPEL SEKARANG";
+
+    // Evaluasi 1: Akrual Level Tahun Ajaran (Tapel)
     if (transTapel && targetTapel) {
       const tY = parseInt(transTapel.split("/")[0]);
       const tarY = parseInt(targetTapel.split("/")[0]);
@@ -376,8 +409,36 @@ export function parsePemasukanExcelSheet(sheet) {
       }
     }
 
+    // Evaluasi 2: Akrual Level Bulan (Khusus SPP/Pondokan/IWS dalam Tapel yang sama)
+    const isSPP = combinedUpper.includes("SPP") || combinedUpper.includes("PONDOKAN") || combinedUpper.includes("IWS");
+    if (isSPP && kategori === "TAPEL SEKARANG") {
+      const detectedMonth = extractMonthNumber(combinedUpper);
+      if (detectedMonth !== null) {
+        let startYear = y;
+        if (targetTapel) {
+          const p = parseInt(targetTapel.split("/")[0]);
+          if (!isNaN(p)) startYear = p;
+        } else {
+          startYear = m >= 7 ? y : y - 1;
+        }
+
+        // Bulan 7-12 masuk di tahun awal, Bulan 1-6 masuk di tahun akhir
+        const targetYear = detectedMonth >= 7 ? startYear : startYear + 1;
+        const targetAbsMonth = targetYear * 12 + detectedMonth;
+
+        if (targetAbsMonth > transAbsMonth) {
+          kategori = "BULAN DEPAN";
+        } else if (targetAbsMonth < transAbsMonth) {
+          kategori = "BULAN LALU";
+        } else {
+          kategori = "TAPEL SEKARANG";
+        }
+      }
+    }
+
     const coaBaru = determineCOA(posPenerimaan, ketItem, kategori);
-    const key = `${tglFormatted}___${kasBank}___${posPenerimaan}___${targetTapel}___${coaBaru}`;
+    // Key grouping mengikutsertakan pos, tapel, kategori, & coaBaru
+    const key = `${tglFormatted}___${kasBank}___${posPenerimaan}___${targetTapel}___${kategori}___${coaBaru}`;
 
     if (!groups[key]) {
       groups[key] = {
@@ -405,13 +466,14 @@ export function parsePemasukanExcelSheet(sheet) {
     let uraianFinal = "";
 
     if (g.isUnitUsahaBundle) {
-      // Format Dinamis: Penerimaan Unit Usaha [Kas/Bank] (Laundry, Parkir)
       const listActive = Array.from(g.activeUnits).join(", ");
       uraianFinal = `Penerimaan Unit Usaha via ${g.kasBank} (${listActive})`;
     } else {
       let detailStr = Array.from(g.keteranganSet).slice(0, 2).join(", ");
       uraianFinal = `Penerimaan ${g.posPenerimaan}`;
-      if (g.targetTapel) uraianFinal += ` T.A ${g.targetTapel}`;
+      if (g.targetTapel && !g.posPenerimaan.includes(g.targetTapel)) {
+        uraianFinal += ` T.A ${g.targetTapel}`;
+      }
       if (detailStr) uraianFinal += ` (${detailStr})`;
     }
 
