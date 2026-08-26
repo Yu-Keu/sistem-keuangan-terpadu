@@ -263,6 +263,10 @@ const COA_REVENUE_MAP = [
   { 
     keys: ["PENDAPATAN BIAYA ADMIN", "BIAYA ADMIN"], 
     coa: "611010104 - Pendapatan Administrasi Bank" 
+  },
+  { 
+    keys: ["TITIPAN FOOD COURT"], 
+    coa: "213010199 - Utang Jangka Pendek Lainnya" 
   }
 ];
 
@@ -294,13 +298,13 @@ export function determineCOA(posAsli, ketItem, kategoriAkrual) {
       return "112010101 - Piutang SPP";
     }
     if (combined.includes("BANGUNAN") || combined.includes("PENGEMBANGAN")) {
-      return "112010102 - Piutang Pembangunan";
+      return "421010104 - Pendapatan Tahunan-DU PSB";
     }
     if (combined.includes("SERAGAM")) {
-      return "112010103 - Piutang Seragam";
+      return "421010105 - Pendapatan Perlengkapan-DU PSB";
     }
     if (combined.includes("PERLENGKAPAN")) {
-      return "112010104 - Piutang Perlengkapan";
+      return "421010105 - Pendapatan Perlengkapan-DU PSB";
     }
   }
 
