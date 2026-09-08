@@ -301,11 +301,17 @@ export function parseMuamalatCsvText(text) {
 }
 
 // Master Pos Unit Usaha yang wajib digabung
+// Master Pos Unit Usaha yang wajib digabung
 const UNIT_USAHA_POS_MAP = [
   { key: "LAUNDRY", label: "Laundry" },
   { key: "HASIL USAHA", label: "Hasil Usaha" },
   { key: "PARKIR", label: "Parkir" },
   { key: "GUEST HOUSE", label: "Guest House" }
+];
+
+const INDO_MONTH_NAMES = [
+  "", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+  "Juli", "Agustus", "September", "Oktober", "November", "Desember"
 ];
 
 export function parsePemasukanExcelSheet(sheet) {
@@ -374,6 +380,7 @@ export function parsePemasukanExcelSheet(sheet) {
           kasBank,
           posPenerimaan: "UNIT USAHA",
           targetTapel: "",
+          targetBulanNama: "",
           kategori: "TAPEL SEKARANG",
           coaBaru: coaUnitUsaha,
           isUnitUsahaBundle: true,
@@ -398,6 +405,7 @@ export function parsePemasukanExcelSheet(sheet) {
     const transAbsMonth = y * 12 + m;
 
     let kategori = "TAPEL SEKARANG";
+    let targetBulanNama = ""; // Menyimpan nama bulan spesifik (misal: "Oktober", "Juni")
 
     // Evaluasi 1: Akrual Level Tahun Ajaran (Tapel)
     if (transTapel && targetTapel) {
@@ -409,36 +417,42 @@ export function parsePemasukanExcelSheet(sheet) {
       }
     }
 
-    // Evaluasi 2: Akrual Level Bulan (Khusus SPP/Pondokan/IWS dalam Tapel yang sama)
+    // Evaluasi 2: Akrual Level Bulan (Khusus SPP/Pondokan/IWS)
     const isSPP = combinedUpper.includes("SPP") || combinedUpper.includes("PONDOKAN") || combinedUpper.includes("IWS");
-    if (isSPP && kategori === "TAPEL SEKARANG") {
+    if (isSPP) {
       const detectedMonth = extractMonthNumber(combinedUpper);
       if (detectedMonth !== null) {
-        let startYear = y;
-        if (targetTapel) {
-          const p = parseInt(targetTapel.split("/")[0]);
-          if (!isNaN(p)) startYear = p;
-        } else {
-          startYear = m >= 7 ? y : y - 1;
-        }
+        targetBulanNama = INDO_MONTH_NAMES[detectedMonth] || "";
 
-        // Bulan 7-12 masuk di tahun awal, Bulan 1-6 masuk di tahun akhir
-        const targetYear = detectedMonth >= 7 ? startYear : startYear + 1;
-        const targetAbsMonth = targetYear * 12 + detectedMonth;
+        // Evaluasi kategori akrual bulan jika berada dalam Tapel yang sama
+        if (kategori === "TAPEL SEKARANG") {
+          let startYear = y;
+          if (targetTapel) {
+            const p = parseInt(targetTapel.split("/")[0]);
+            if (!isNaN(p)) startYear = p;
+          } else {
+            startYear = m >= 7 ? y : y - 1;
+          }
 
-        if (targetAbsMonth > transAbsMonth) {
-          kategori = "BULAN DEPAN";
-        } else if (targetAbsMonth < transAbsMonth) {
-          kategori = "BULAN LALU";
-        } else {
-          kategori = "TAPEL SEKARANG";
+          // Bulan 7-12 masuk di tahun awal, Bulan 1-6 masuk di tahun akhir
+          const targetYear = detectedMonth >= 7 ? startYear : startYear + 1;
+          const targetAbsMonth = targetYear * 12 + detectedMonth;
+
+          if (targetAbsMonth > transAbsMonth) {
+            kategori = "BULAN DEPAN";
+          } else if (targetAbsMonth < transAbsMonth) {
+            kategori = "BULAN LALU";
+          } else {
+            kategori = "TAPEL SEKARANG";
+          }
         }
       }
     }
 
     const coaBaru = determineCOA(posPenerimaan, ketItem, kategori);
-    // Key grouping mengikutsertakan pos, tapel, kategori, & coaBaru
-    const key = `${tglFormatted}___${kasBank}___${posPenerimaan}___${targetTapel}___${kategori}___${coaBaru}`;
+
+    // KEY GROUPING: Memasukkan targetBulanNama agar per-bulan terpisah rapi
+    const key = `${tglFormatted}___${kasBank}___${posPenerimaan}___${targetTapel}___${targetBulanNama}___${kategori}___${coaBaru}`;
 
     if (!groups[key]) {
       groups[key] = {
@@ -448,6 +462,7 @@ export function parsePemasukanExcelSheet(sheet) {
         kasBank,
         posPenerimaan,
         targetTapel,
+        targetBulanNama,
         kategori,
         coaBaru,
         isUnitUsahaBundle: false,
@@ -469,12 +484,18 @@ export function parsePemasukanExcelSheet(sheet) {
       const listActive = Array.from(g.activeUnits).join(", ");
       uraianFinal = `Penerimaan Unit Usaha via ${g.kasBank} (${listActive})`;
     } else {
-      let detailStr = Array.from(g.keteranganSet).slice(0, 2).join(", ");
       uraianFinal = `Penerimaan ${g.posPenerimaan}`;
       if (g.targetTapel && !g.posPenerimaan.includes(g.targetTapel)) {
         uraianFinal += ` T.A ${g.targetTapel}`;
       }
-      if (detailStr) uraianFinal += ` (${detailStr})`;
+
+      // Jika terdeteksi bulan spesifik, gunakan nama bulan sebagai rincian utama
+      if (g.targetBulanNama) {
+        uraianFinal += ` (${g.targetBulanNama})`;
+      } else {
+        let detailStr = Array.from(g.keteranganSet).slice(0, 2).join(", ");
+        if (detailStr) uraianFinal += ` (${detailStr})`;
+      }
     }
 
     return {
@@ -484,6 +505,7 @@ export function parsePemasukanExcelSheet(sheet) {
       kasBank: g.kasBank,
       posPenerimaan: g.posPenerimaan,
       targetTapel: g.targetTapel,
+      targetBulanNama: g.targetBulanNama,
       kategori: g.kategori,
       coaBaru: g.coaBaru,
       jmlTrans: g.jmlTrans,
