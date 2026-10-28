@@ -101,25 +101,54 @@ export function exportPemasukanToExcel(filteredData) {
     ["No Batch", "Tanggal", "Uraian Jurnal", "Kode Akun", "Nama Akun", "Posisi", "Debit", "Kredit"]
   ];
   let batch = 1;
+  const processedTrx = new Set();
 
   filteredData.forEach(item => {
-    const isNegative = (item.totalPenerimaan || 0) < 0;
-    const nom = Math.abs(item.totalPenerimaan || 0);
+    const trxId = item.noTransaksi || item.id;
+    if (processedTrx.has(trxId)) return;
+    processedTrx.add(trxId);
+
+    // Ambil semua sub-item (rincian jenis) milik nomor transaksi ini
+    const trxItems = filteredData.filter(x => (x.noTransaksi || x.id) === trxId);
+
+    // Hitung total uang yang masuk untuk 1 nomor transaksi ini
+    const totalNom = trxItems.reduce((acc, curr) => acc + (curr.totalPenerimaan || 0), 0);
     const bank = getBankDetails(item.kasBank);
-    const parts = String(item.coaBaru || "").split(" - ");
-    const coaCode = parts[0] ? parts[0].trim() : "423010105";
-    const coaName = parts[1] ? parts[1].trim() : item.coaBaru;
     const tgl = (item.tglFormatted || "").replace(/-/g, '/');
 
-    if (!isNegative) {
-      // 1. Pemasukan Normal (Positif): DEBIT Kas/Bank, KREDIT Akun COA
-      wsData.push([batch, tgl, item.uraianJurnal, bank.code, bank.name, "DEBIT", nom, 0]);
-      wsData.push([batch, tgl, item.uraianJurnal, coaCode, coaName, "KREDIT", 0, nom]);
+    // Uraian untuk baris kas/bank
+    const uraianBank = trxItems.length === 1 
+      ? trxItems[0].uraianJurnal 
+      : `Penerimaan Kas/Bank via ${item.kasBank} [${trxId}]`;
+
+    if (totalNom >= 0) {
+      // 1. Baris DEBIT: Kas / Bank sebesar total uang masuk
+      wsData.push([batch, tgl, uraianBank, bank.code, bank.name, "DEBIT", totalNom, 0]);
+
+      // 2. Baris KREDIT: Masing-masing akun (Piutang, Pendapatan, Diterima di Muka, dll.)
+      trxItems.forEach(sub => {
+        const parts = String(sub.coaBaru || "").split(" - ");
+        const coaCode = parts[0] ? parts[0].trim() : "423010105";
+        const coaName = parts[1] ? parts[1].trim() : sub.coaBaru;
+        const nom = Math.abs(sub.totalPenerimaan || 0);
+
+        wsData.push([batch, tgl, sub.uraianJurnal, coaCode, coaName, "KREDIT", 0, nom]);
+      });
     } else {
-      // 2. Koreksi/Minus (Negatif): DIBALIK -> DEBIT Akun COA, KREDIT Kas/Bank
-      wsData.push([batch, tgl, item.uraianJurnal, coaCode, coaName, "DEBIT", nom, 0]);
-      wsData.push([batch, tgl, item.uraianJurnal, bank.code, bank.name, "KREDIT", 0, nom]);
+      // Penanganan transaksi minus (koreksi)
+      const absTotal = Math.abs(totalNom);
+      trxItems.forEach(sub => {
+        const parts = String(sub.coaBaru || "").split(" - ");
+        const coaCode = parts[0] ? parts[0].trim() : "423010105";
+        const coaName = parts[1] ? parts[1].trim() : sub.coaBaru;
+        const nom = Math.abs(sub.totalPenerimaan || 0);
+
+        wsData.push([batch, tgl, sub.uraianJurnal, coaCode, coaName, "DEBIT", nom, 0]);
+      });
+      wsData.push([batch, tgl, uraianBank, bank.code, bank.name, "KREDIT", 0, absTotal]);
     }
+
+    // Batch berikutnya: angka selalu bertambah 1 per Nomor Transaksi
     batch++;
   });
 
