@@ -108,34 +108,39 @@ export function exportPemasukanToExcel(filteredData) {
     if (processedTrx.has(trxId)) return;
     processedTrx.add(trxId);
 
-    // Ambil semua sub-item (rincian jenis) milik nomor transaksi ini
+    // Ambil semua sub-item dalam 1 transaksi
     const trxItems = filteredData.filter(x => (x.noTransaksi || x.id) === trxId);
 
-    // Hitung total uang yang masuk untuk 1 nomor transaksi ini
+    // Total nominal penerimaan transaksi
     const totalNom = trxItems.reduce((acc, curr) => acc + (curr.totalPenerimaan || 0), 0);
     const bank = getBankDetails(item.kasBank);
     const tgl = (item.tglFormatted || "").replace(/-/g, '/');
 
-    // Uraian untuk baris kas/bank
-    const uraianBank = trxItems.length === 1 
-      ? trxItems[0].uraianJurnal 
-      : `Penerimaan Kas/Bank via ${item.kasBank} [${trxId}]`;
+    // =========================================================================
+    // URAIAN JURNAL DISERAGAMKAN UNTUK SELURUH BARIS DALAM BATCH INI
+    // Fokus pada Nama Orang, tanpa kode transaksi
+    // =========================================================================
+    const namaPart = item.namaOrang ? ` a.n. ${item.namaOrang}${item.kelas ? ` (${item.kelas})` : ""}` : "";
+    const uniquePos = Array.from(new Set(trxItems.map(x => x.posPenerimaan).filter(Boolean)));
+    const posPart = uniquePos.length === 1 ? ` ${uniquePos[0]}` : "";
+    const batchUraian = `Penerimaan${posPart}${namaPart}`.trim() || item.uraianJurnal || "Penerimaan Kas/Bank";
 
     if (totalNom >= 0) {
-      // 1. Baris DEBIT: Kas / Bank sebesar total uang masuk
-      wsData.push([batch, tgl, uraianBank, bank.code, bank.name, "DEBIT", totalNom, 0]);
+      // 1. DEBIT Kas/Bank (Total Uang Masuk)
+      wsData.push([batch, tgl, batchUraian, bank.code, bank.name, "DEBIT", totalNom, 0]);
 
-      // 2. Baris KREDIT: Masing-masing akun (Piutang, Pendapatan, Diterima di Muka, dll.)
+      // 2. KREDIT Masing-masing Akun COA (Piutang, Pendapatan, Diterima di Muka, dll.)
       trxItems.forEach(sub => {
         const parts = String(sub.coaBaru || "").split(" - ");
         const coaCode = parts[0] ? parts[0].trim() : "423010105";
         const coaName = parts[1] ? parts[1].trim() : sub.coaBaru;
         const nom = Math.abs(sub.totalPenerimaan || 0);
 
-        wsData.push([batch, tgl, sub.uraianJurnal, coaCode, coaName, "KREDIT", 0, nom]);
+        // Keterangan ini DIJAMIN 100% PERSIS SAMA dengan baris DEBIT
+        wsData.push([batch, tgl, batchUraian, coaCode, coaName, "KREDIT", 0, nom]);
       });
     } else {
-      // Penanganan transaksi minus (koreksi)
+      // Transaksi minus (koreksi)
       const absTotal = Math.abs(totalNom);
       trxItems.forEach(sub => {
         const parts = String(sub.coaBaru || "").split(" - ");
@@ -143,13 +148,12 @@ export function exportPemasukanToExcel(filteredData) {
         const coaName = parts[1] ? parts[1].trim() : sub.coaBaru;
         const nom = Math.abs(sub.totalPenerimaan || 0);
 
-        wsData.push([batch, tgl, sub.uraianJurnal, coaCode, coaName, "DEBIT", nom, 0]);
+        wsData.push([batch, tgl, batchUraian, coaCode, coaName, "DEBIT", nom, 0]);
       });
-      wsData.push([batch, tgl, uraianBank, bank.code, bank.name, "KREDIT", 0, absTotal]);
+      wsData.push([batch, tgl, batchUraian, bank.code, bank.name, "KREDIT", 0, absTotal]);
     }
 
-    // Batch berikutnya: angka selalu bertambah 1 per Nomor Transaksi
-    batch++;
+    batch++; // Batch selalu angka berurutan: 1, 2, 3, dst.
   });
 
   downloadWorkbookFile(wsData, "Jurnal_Pemasukan");
