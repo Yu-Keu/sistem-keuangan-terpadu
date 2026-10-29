@@ -111,49 +111,51 @@ export function exportPemasukanToExcel(filteredData) {
     // Ambil semua sub-item dalam 1 transaksi
     const trxItems = filteredData.filter(x => (x.noTransaksi || x.id) === trxId);
 
-    // Total nominal penerimaan transaksi
-    const totalNom = trxItems.reduce((acc, curr) => acc + (curr.totalPenerimaan || 0), 0);
+    // Hitung total net kas/bank (bisa positif jika uang masuk, atau negatif jika uang keluar/koreksi)
+    const netCash = trxItems.reduce((acc, curr) => acc + (curr.totalPenerimaan || 0), 0);
     const bank = getBankDetails(item.kasBank);
     const tgl = (item.tglFormatted || "").replace(/-/g, '/');
 
-    // =========================================================================
-    // URAIAN JURNAL DISERAGAMKAN UNTUK SELURUH BARIS DALAM BATCH INI
-    // Fokus pada Nama Orang, tanpa kode transaksi
-    // =========================================================================
+    // Uraian Jurnal seragam untuk semua baris dalam batch ini (fokus pada Nama)
     const namaPart = item.namaOrang ? ` a.n. ${item.namaOrang}${item.kelas ? ` (${item.kelas})` : ""}` : "";
     const uniquePos = Array.from(new Set(trxItems.map(x => x.posPenerimaan).filter(Boolean)));
     const posPart = uniquePos.length === 1 ? ` ${uniquePos[0]}` : "";
     const batchUraian = `Penerimaan${posPart}${namaPart}`.trim() || item.uraianJurnal || "Penerimaan Kas/Bank";
 
-    if (totalNom >= 0) {
-      // 1. DEBIT Kas/Bank (Total Uang Masuk)
-      wsData.push([batch, tgl, batchUraian, bank.code, bank.name, "DEBIT", totalNom, 0]);
+    const debitRows = [];
+    const kreditRows = [];
 
-      // 2. KREDIT Masing-masing Akun COA (Piutang, Pendapatan, Diterima di Muka, dll.)
-      trxItems.forEach(sub => {
-        const parts = String(sub.coaBaru || "").split(" - ");
-        const coaCode = parts[0] ? parts[0].trim() : "423010105";
-        const coaName = parts[1] ? parts[1].trim() : sub.coaBaru;
-        const nom = Math.abs(sub.totalPenerimaan || 0);
-
-        // Keterangan ini DIJAMIN 100% PERSIS SAMA dengan baris DEBIT
-        wsData.push([batch, tgl, batchUraian, coaCode, coaName, "KREDIT", 0, nom]);
-      });
-    } else {
-      // Transaksi minus (koreksi)
-      const absTotal = Math.abs(totalNom);
-      trxItems.forEach(sub => {
-        const parts = String(sub.coaBaru || "").split(" - ");
-        const coaCode = parts[0] ? parts[0].trim() : "423010105";
-        const coaName = parts[1] ? parts[1].trim() : sub.coaBaru;
-        const nom = Math.abs(sub.totalPenerimaan || 0);
-
-        wsData.push([batch, tgl, batchUraian, coaCode, coaName, "DEBIT", nom, 0]);
-      });
-      wsData.push([batch, tgl, batchUraian, bank.code, bank.name, "KREDIT", 0, absTotal]);
+    // 1. Evaluasi Kas / Bank berdasarkan Net Nominal Transaksi
+    if (netCash > 0) {
+      // Normal: Kas bertambah di DEBIT
+      debitRows.push([batch, tgl, batchUraian, bank.code, bank.name, "DEBIT", netCash, 0]);
+    } else if (netCash < 0) {
+      // Minus: Kas berkurang di KREDIT (koreksi/pengembalian)
+      kreditRows.push([batch, tgl, batchUraian, bank.code, bank.name, "KREDIT", 0, Math.abs(netCash)]);
     }
 
-    batch++; // Batch selalu angka berurutan: 1, 2, 3, dst.
+    // 2. Evaluasi Akun-Akun Penerimaan (COA) per Sub-Item
+    trxItems.forEach(sub => {
+      const parts = String(sub.coaBaru || "").split(" - ");
+      const coaCode = parts[0] ? parts[0].trim() : "423010105";
+      const coaName = parts[1] ? parts[1].trim() : sub.coaBaru;
+      const nom = Math.abs(sub.totalPenerimaan || 0);
+      const isMinus = (sub.totalPenerimaan || 0) < 0;
+
+      if (isMinus) {
+        // JIKA ANGKA MINUS -> Akun Penerimaan berada di DEBIT
+        debitRows.push([batch, tgl, batchUraian, coaCode, coaName, "DEBIT", nom, 0]);
+      } else {
+        // JIKA ANGKA POSITIF -> Akun Penerimaan berada di KREDIT
+        kreditRows.push([batch, tgl, batchUraian, coaCode, coaName, "KREDIT", 0, nom]);
+      }
+    });
+
+    // Gabungkan sesuai urutan standar jurnal: semua baris DEBIT dulu, lalu KREDIT
+    debitRows.forEach(r => wsData.push(r));
+    kreditRows.forEach(r => wsData.push(r));
+
+    batch++; // Angka batch tetap berurutan: 1, 2, 3, dst.
   });
 
   downloadWorkbookFile(wsData, "Jurnal_Pemasukan");
