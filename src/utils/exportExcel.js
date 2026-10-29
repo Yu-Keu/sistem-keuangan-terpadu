@@ -97,6 +97,7 @@ export function exportPemasukanToExcel(filteredData) {
     alert("Tidak ada data pemasukan!");
     return;
   }
+
   const wsData = [
     ["No Batch", "Tanggal", "Uraian Jurnal", "Kode Akun", "Nama Akun", "Posisi", "Debit", "Kredit"]
   ];
@@ -108,15 +109,15 @@ export function exportPemasukanToExcel(filteredData) {
     if (processedTrx.has(trxId)) return;
     processedTrx.add(trxId);
 
-    // Ambil semua sub-item dalam 1 transaksi
+    // 1. Ambil semua rincian milik nomor transaksi ini
     const trxItems = filteredData.filter(x => (x.noTransaksi || x.id) === trxId);
 
-    // Hitung total net kas/bank (bisa positif jika uang masuk, atau negatif jika uang keluar/koreksi)
+    // 2. Hitung total net kas/bank
     const netCash = trxItems.reduce((acc, curr) => acc + (curr.totalPenerimaan || 0), 0);
     const bank = getBankDetails(item.kasBank);
     const tgl = (item.tglFormatted || "").replace(/-/g, '/');
 
-    // Uraian Jurnal seragam untuk semua baris dalam batch ini (fokus pada Nama)
+    // 3. Tentukan 1 Uraian Jurnal yang seragam untuk semua baris dalam batch ini
     const namaPart = item.namaOrang ? ` a.n. ${item.namaOrang}${item.kelas ? ` (${item.kelas})` : ""}` : "";
     const uniquePos = Array.from(new Set(trxItems.map(x => x.posPenerimaan).filter(Boolean)));
     const posPart = uniquePos.length === 1 ? ` ${uniquePos[0]}` : "";
@@ -125,37 +126,45 @@ export function exportPemasukanToExcel(filteredData) {
     const debitRows = [];
     const kreditRows = [];
 
-    // 1. Evaluasi Kas / Bank berdasarkan Net Nominal Transaksi
+    // 4. Evaluasi Baris Kas / Bank
+    // Jika netCash === 0 (pindah pos murni tanpa uang kas keluar/masuk), baris bank tidak dibuat
     if (netCash > 0) {
-      // Normal: Kas bertambah di DEBIT
       debitRows.push([batch, tgl, batchUraian, bank.code, bank.name, "DEBIT", netCash, 0]);
     } else if (netCash < 0) {
-      // Minus: Kas berkurang di KREDIT (koreksi/pengembalian)
       kreditRows.push([batch, tgl, batchUraian, bank.code, bank.name, "KREDIT", 0, Math.abs(netCash)]);
     }
 
-    // 2. Evaluasi Akun-Akun Penerimaan (COA) per Sub-Item
+    // 5. Evaluasi Akun-Akun Penerimaan (COA) per Sub-Item
     trxItems.forEach(sub => {
       const parts = String(sub.coaBaru || "").split(" - ");
       const coaCode = parts[0] ? parts[0].trim() : "423010105";
       const coaName = parts[1] ? parts[1].trim() : sub.coaBaru;
-      const nom = Math.abs(sub.totalPenerimaan || 0);
-      const isMinus = (sub.totalPenerimaan || 0) < 0;
+      const rawNom = sub.totalPenerimaan || 0;
+      const nom = Math.abs(rawNom);
 
-      if (isMinus) {
-        // JIKA ANGKA MINUS -> Akun Penerimaan berada di DEBIT
+      // Edge Case: Jangan buat baris jika nominal 0 (misal: pos sama yang saling menghabiskan)
+      if (nom === 0) return;
+
+      if (rawNom < 0) {
+        // Angka minus (koreksi/retur) -> Akun COA diletakkan di DEBIT
         debitRows.push([batch, tgl, batchUraian, coaCode, coaName, "DEBIT", nom, 0]);
       } else {
-        // JIKA ANGKA POSITIF -> Akun Penerimaan berada di KREDIT
+        // Angka normal positif -> Akun COA diletakkan di KREDIT
         kreditRows.push([batch, tgl, batchUraian, coaCode, coaName, "KREDIT", 0, nom]);
       }
     });
 
-    // Gabungkan sesuai urutan standar jurnal: semua baris DEBIT dulu, lalu KREDIT
+    // Edge Case: Jika transaksi ini net 0 total dan tidak ada baris yang terbentuk, lewati tanpa menaikkan nomor batch
+    if (debitRows.length === 0 && kreditRows.length === 0) {
+      return;
+    }
+
+    // 6. Masukkan ke tabel: Seluruh baris DEBIT dulu, lalu KREDIT (standar jurnal umum)
     debitRows.forEach(r => wsData.push(r));
     kreditRows.forEach(r => wsData.push(r));
 
-    batch++; // Angka batch tetap berurutan: 1, 2, 3, dst.
+    // Batch selalu bertambah urut per transaksi riil yang berhasil dicatat
+    batch++;
   });
 
   downloadWorkbookFile(wsData, "Jurnal_Pemasukan");
