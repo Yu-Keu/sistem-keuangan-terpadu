@@ -94,13 +94,15 @@ export function exportPengeluaranToExcel(filteredData) {
 
 export function exportPemasukanToExcel(filteredData) {
   if (!filteredData || filteredData.length === 0) {
-    alert("Tidak ada data pemasukan!");
+    alert("Tidak ada data pemasukan untuk diekspor!");
     return;
   }
 
+  // Header template jurnal Excel
   const wsData = [
     ["No Batch", "Tanggal", "Uraian Jurnal", "Kode Akun", "Nama Akun", "Posisi", "Debit", "Kredit"]
   ];
+
   let batch = 1;
   const processedTrx = new Set();
 
@@ -109,63 +111,71 @@ export function exportPemasukanToExcel(filteredData) {
     if (processedTrx.has(trxId)) return;
     processedTrx.add(trxId);
 
-    // 1. Ambil semua rincian milik nomor transaksi ini
+    // 1. Ambil seluruh rincian transaksi dengan nomor transaksi yang sama
     const trxItems = filteredData.filter(x => (x.noTransaksi || x.id) === trxId);
 
-    // 2. Hitung total net kas/bank
-    const netCash = trxItems.reduce((acc, curr) => acc + (curr.totalPenerimaan || 0), 0);
-    const bank = getBankDetails(item.kasBank);
-    const tgl = (item.tglFormatted || "").replace(/-/g, '/');
+    // 2. Format Tanggal & Bank
+    const tgl = (item.tglFormatted || "").replace(/-/g, "/");
+    const kasBankType = trxItems.map(x => x.kasBank).find(Boolean) || item.kasBank || "Kas Besar";
+    const bank = getBankDetails(kasBankType);
 
-    // 3. Tentukan 1 Uraian Jurnal yang seragam untuk semua baris dalam batch ini
-    const namaPart = item.namaOrang ? ` a.n. ${item.namaOrang}${item.kelas ? ` (${item.kelas})` : ""}` : "";
-    const uniquePos = Array.from(new Set(trxItems.map(x => x.posPenerimaan).filter(Boolean)));
-    const posPart = uniquePos.length === 1 ? ` ${uniquePos[0]}` : "";
+    // 3. Rekap Pos & Identitas agar Uraian Jurnal informatif dan seragam per batch
+    const uniquePos = Array.from(new Set(trxItems.map(x => (x.posPenerimaan || "").trim()).filter(Boolean)));
+    const posPart = uniquePos.length > 0 ? ` ${uniquePos.join(", ")}` : "";
+
+    const namaOrang = trxItems.map(x => (x.namaOrang || "").trim()).find(Boolean) || "";
+    const kelas = trxItems.map(x => (x.kelas || "").trim()).find(Boolean) || "";
+    const namaPart = namaOrang ? ` a.n. ${namaOrang}${kelas ? ` (${kelas})` : ""}` : "";
+
+    // Uraian final untuk seluruh baris di batch ini
     const batchUraian = `Penerimaan${posPart}${namaPart}`.trim() || item.uraianJurnal || "Penerimaan Kas/Bank";
+
+    // 4. Hitung Net Kas/Bank
+    const netCash = trxItems.reduce((acc, curr) => acc + (curr.totalPenerimaan || 0), 0);
 
     const debitRows = [];
     const kreditRows = [];
 
-    // 4. Evaluasi Baris Kas / Bank
-    // Jika netCash === 0 (pindah pos murni tanpa uang kas keluar/masuk), baris bank tidak dibuat
+    // Evaluasi Baris Kas / Bank
     if (netCash > 0) {
       debitRows.push([batch, tgl, batchUraian, bank.code, bank.name, "DEBIT", netCash, 0]);
     } else if (netCash < 0) {
       kreditRows.push([batch, tgl, batchUraian, bank.code, bank.name, "KREDIT", 0, Math.abs(netCash)]);
     }
 
-    // 5. Evaluasi Akun-Akun Penerimaan (COA) per Sub-Item
+    // 5. Evaluasi Akun Pendapatan/Kewajiban/Piutang (COA) per Sub-Item
     trxItems.forEach(sub => {
       const parts = String(sub.coaBaru || "").split(" - ");
       const coaCode = parts[0] ? parts[0].trim() : "423010105";
-      const coaName = parts[1] ? parts[1].trim() : sub.coaBaru;
+      const coaName = parts[1] ? parts[1].trim() : (sub.coaBaru || "Pendapatan");
       const rawNom = sub.totalPenerimaan || 0;
       const nom = Math.abs(rawNom);
 
-      // Edge Case: Jangan buat baris jika nominal 0 (misal: pos sama yang saling menghabiskan)
+      // Lewati jika nominal 0
       if (nom === 0) return;
 
       if (rawNom < 0) {
-        // Angka minus (koreksi/retur) -> Akun COA diletakkan di DEBIT
+        // Nilai minus (retur / koreksi akrual) dicatat di posisi DEBIT
         debitRows.push([batch, tgl, batchUraian, coaCode, coaName, "DEBIT", nom, 0]);
       } else {
-        // Angka normal positif -> Akun COA diletakkan di KREDIT
+        // Nilai normal dicatat di posisi KREDIT
         kreditRows.push([batch, tgl, batchUraian, coaCode, coaName, "KREDIT", 0, nom]);
       }
     });
 
-    // Edge Case: Jika transaksi ini net 0 total dan tidak ada baris yang terbentuk, lewati tanpa menaikkan nomor batch
+    // Lewati jika transaksi tidak menghasilkan baris jurnal (misal murni nol)
     if (debitRows.length === 0 && kreditRows.length === 0) {
       return;
     }
 
-    // 6. Masukkan ke tabel: Seluruh baris DEBIT dulu, lalu KREDIT (standar jurnal umum)
-    debitRows.forEach(r => wsData.push(r));
-    kreditRows.forEach(r => wsData.push(r));
+    // 6. Urutan standar akuntansi: Seluruh DEBIT terlebih dahulu, kemudian KREDIT
+    debitRows.forEach(row => wsData.push(row));
+    kreditRows.forEach(row => wsData.push(row));
 
-    // Batch selalu bertambah urut per transaksi riil yang berhasil dicatat
+    // Lanjut ke nomor batch berikutnya
     batch++;
   });
 
+  // Download file hasil export
   downloadWorkbookFile(wsData, "Jurnal_Pemasukan");
 }
